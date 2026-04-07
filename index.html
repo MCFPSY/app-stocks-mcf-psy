@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>App Stocks MCF + PSY — Mockup Visual</title>
+<style>
+:root{
+  --color-blue:#007AFF;
+  --color-blue-dark:#0051D5;
+  --color-green:#34C759;
+  --color-orange:#FF9500;
+  --color-red:#FF3B30;
+  --color-purple:#AF52DE;
+  --color-text:#1d1d1f;
+  --color-text-2:#6e6e73;
+  --color-bg:#f5f5f7;
+  --color-white:#ffffff;
+  --color-border:#d2d2d7;
+  --radius-sm:8px;--radius-md:12px;--radius-lg:16px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.08);
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--color-bg);color:var(--color-text);min-height:100vh}
+.app-header{background:rgba(255,255,255,.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--color-border);position:sticky;top:0;z-index:100}
+.header-content{max-width:1280px;margin:0 auto;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+.app-header h1{font-size:1.35rem;font-weight:600;display:flex;align-items:center;gap:10px}
+.logo{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,#007AFF,#34C759);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+.header-right{display:flex;align-items:center;gap:12px}
+.sync-pill{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#eef7ee;color:#1f7a3a;border-radius:999px;font-size:.78rem;font-weight:600}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#34C759;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
+.user-chip{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--color-border);border-radius:999px;font-size:.82rem}
+.avatar{width:26px;height:26px;border-radius:50%;background:#007AFF;color:#fff;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700}
+.app-main{max-width:1280px;margin:0 auto;padding:20px 24px}
+.tab-nav{display:flex;gap:6px;background:#fff;padding:6px;border-radius:14px;box-shadow:var(--shadow-sm);margin-bottom:20px;overflow-x:auto}
+.tab-btn{flex:1;min-width:fit-content;padding:11px 14px;border:none;background:transparent;color:var(--color-text-2);font-size:.86rem;font-weight:600;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;transition:all .15s}
+.tab-btn:hover:not(.active){background:var(--color-bg)}
+.tab-btn.active{background:var(--color-blue);color:#fff;box-shadow:0 2px 6px rgba(0,122,255,.35)}
+.tab-badge{background:#FF3B30;color:#fff;border-radius:999px;padding:1px 7px;font-size:.7rem;font-weight:700}
+.tab-btn.active .tab-badge{background:#fff;color:#FF3B30}
+.tab{display:none}
+.tab.active{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.card{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:24px;margin-bottom:18px}
+.card h2{font-size:1.15rem;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.card .sub{color:var(--color-text-2);font-size:.85rem;margin-bottom:18px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+.kpi{background:#fff;border-radius:var(--radius-md);padding:18px;box-shadow:var(--shadow-sm);border-left:4px solid var(--color-blue)}
+.kpi.green{border-color:var(--color-green)}.kpi.orange{border-color:var(--color-orange)}.kpi.red{border-color:var(--color-red)}.kpi.purple{border-color:var(--color-purple)}
+.kpi .label{font-size:.78rem;color:var(--color-text-2);text-transform:uppercase;font-weight:600;letter-spacing:.5px}
+.kpi .value{font-size:1.85rem;font-weight:700;margin-top:4px}
+.kpi .delta{font-size:.78rem;color:var(--color-text-2);margin-top:4px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:.82rem;font-weight:600;color:var(--color-text)}
+.field select,.field input{font-family:inherit;font-size:1.1rem;padding:14px 16px;border:2px solid var(--color-border);border-radius:12px;background:#fff;transition:border .15s;min-height:54px}
+.field input.big,.field select.big{font-size:1.6rem;font-weight:700;text-align:center;padding:18px}
+.field select:focus,.field input:focus{outline:none;border-color:var(--color-blue)}
+.field .readonly{background:#f0f7ff;border-color:#007AFF;color:#0051D5;font-weight:600}
+.field .hint{font-size:.75rem;color:var(--color-text-2)}
+.btn{padding:14px 22px;border:none;border-radius:12px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s}
+.btn-primary{background:var(--color-blue);color:#fff}
+.btn-primary:hover{background:var(--color-blue-dark)}
+.btn-big{font-size:1.15rem;padding:18px 28px;min-height:60px}
+.btn-secondary{background:var(--color-bg);color:var(--color-text)}
+.btn-success{background:var(--color-green);color:#fff}
+.btn-danger{background:var(--color-red);color:#fff}
+.btn-row{display:flex;gap:12px;justify-content:flex-end;margin-top:20px}
+.company-toggle{display:flex;background:var(--color-bg);border-radius:12px;padding:4px;width:fit-content;margin-bottom:18px}
+.company-toggle button{padding:10px 22px;border:none;background:transparent;border-radius:9px;font-weight:600;cursor:pointer;color:var(--color-text-2);font-size:.9rem}
+.company-toggle button.active{background:#fff;color:var(--color-blue);box-shadow:var(--shadow-sm)}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{text-align:left;padding:12px;background:#fafafa;font-weight:600;color:var(--color-text-2);border-bottom:2px solid var(--color-border);font-size:.78rem;text-transform:uppercase;letter-spacing:.3px}
+td{padding:14px 12px;border-bottom:1px solid #f0f0f3}
+tr:hover td{background:#fafbfd}
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.72rem;font-weight:600}
+.tag-mcf{background:#e3f2fd;color:#0d47a1}
+.tag-psy{background:#f3e5f5;color:#6a1b9a}
+.tag-in{background:#e8f5e9;color:#1b5e20}
+.tag-out{background:#fff3e0;color:#e65100}
+.tag-ok{background:#e8f5e9;color:#1b5e20}
+.tag-pending{background:#fff8e1;color:#f57f17}
+.tag-doubt{background:#fce4ec;color:#880e4f}
+.search-bar{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.search-bar input,.search-bar select{padding:11px 14px;border:1px solid var(--color-border);border-radius:10px;font-family:inherit;font-size:.9rem;background:#fff}
+.search-bar input{flex:1;min-width:200px}
+.summary-modal-mock{margin-top:20px;border:2px dashed var(--color-blue);border-radius:14px;padding:22px;background:#f0f7ff}
+.summary-modal-mock h3{margin-bottom:14px;color:var(--color-blue);display:flex;align-items:center;gap:10px}
+.summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #c9deff}
+.summary-row b{color:var(--color-text)}
+.checkbox-row{display:flex;align-items:center;gap:10px;margin-top:14px;padding:12px;background:#fce4ec;border-radius:10px}
+.checkbox-row input{width:22px;height:22px}
+.req-list-item{display:flex;justify-content:space-between;align-items:center;padding:14px;border:1px solid var(--color-border);border-radius:12px;margin-bottom:10px}
+.req-list-item .info{display:flex;flex-direction:column;gap:4px}
+.req-list-item .meta{font-size:.8rem;color:var(--color-text-2)}
+@media(max-width:768px){.form-grid{grid-template-columns:1fr}.app-main{padding:14px}.tab-btn span.label{display:none}.kpi .value{font-size:1.5rem}}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-content">
+    <h1><div class="logo">S</div> Stocks MCF + PSY</h1>
+    <div class="header-right">
+      <div class="sync-pill"><span class="sync-dot"></span>Sincronizado</div>
+      <div class="user-chip"><div class="avatar">GB</div>Gonçalo · Admin</div>
+    </div>
+  </div>
+</header>
+
+<main class="app-main">
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="malotes">📦 <span class="label">Malotes Produção</span></button>
+    <button class="tab-btn" data-tab="transfer">🔄 <span class="label">Transferências</span></button>
+    <button class="tab-btn" data-tab="inventario">📊 <span class="label">Inventário</span></button>
+    <button class="tab-btn" data-tab="movimentos">📅 <span class="label">Movimentos</span></button>
+    <button class="tab-btn" data-tab="pedidos">📋 <span class="label">Pedidos</span> <span class="tab-badge">3</span></button>
+    <button class="tab-btn" data-tab="duvidas">❓ <span class="label">Dúvidas</span> <span class="tab-badge">2</span></button>
+    <button class="tab-btn" data-tab="ajustes">⚙️ <span class="label">Ajustes</span></button>
+  </nav>
+
+  <!-- TAB: MALOTES -->
+  <section class="tab active" id="tab-malotes">
+    <div class="card">
+      <h2>📦 Inserir Malotes de Produção MCF</h2>
+      <p class="sub">Empilhadorista — toca, escolhe e regista. Rápido, com botões grandes.</p>
+
+      <div class="form-grid">
+        <div class="field">
+          <label>Categoria</label>
+          <select class="big">
+            <option>Tábuas</option>
+            <option>Barrotes</option>
+            <option>Outros</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Produto registado</label>
+          <select class="big">
+            <option>1200 x 98 x 14</option>
+            <option>2500 x 100 x 90</option>
+            <option>2500 x 145 x 77</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Produto stock (auto)</label>
+          <input class="big readonly" value="1200 x 98 x 15" readonly>
+          <span class="hint">↑ Convertido automaticamente via tabela "MP Standard"</span>
+        </div>
+        <div class="field">
+          <label>Nº de malotes</label>
+          <input type="number" class="big" value="4">
+        </div>
+        <div class="field">
+          <label>Peças por malote</label>
+          <input type="number" class="big" value="120">
+        </div>
+        <div class="field">
+          <label>Total peças (auto)</label>
+          <input class="big readonly" value="480" readonly>
+        </div>
+        <div class="field">
+          <label>m³ totais (auto)</label>
+          <input class="big readonly" value="0,8467 m³" readonly>
+        </div>
+        <div class="field">
+          <label>Incerteza no produto?</label>
+          <select class="big"><option>Não</option><option>Sim — enviar para Dúvidas</option></select>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary btn-big">Limpar</button>
+        <button class="btn btn-primary btn-big">✓ Registar entrada</button>
+      </div>
+
+      <div class="summary-modal-mock">
+        <h3>📋 Confirmação (aparece após "Registar")</h3>
+        <div class="summary-row"><span>Empresa</span><b>MCF</b></div>
+        <div class="summary-row"><span>Produto</span><b>1200 x 98 x 15</b></div>
+        <div class="summary-row"><span>Malotes × Peças</span><b>4 × 120 = 480</b></div>
+        <div class="summary-row"><span>Volume</span><b>0,8467 m³</b></div>
+        <div class="summary-row"><span>Operador</span><b>Gonçalo Barata</b></div>
+        <div class="summary-row"><span>Hora</span><b>2026-04-07 16:42</b></div>
+        <div class="btn-row">
+          <button class="btn btn-secondary">Cancelar</button>
+          <button class="btn btn-success">✓ Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: TRANSFER -->
+  <section class="tab" id="tab-transfer">
+    <div class="card">
+      <h2>🔄 Transferência MCF → PSY</h2>
+      <p class="sub">Sai da MCF, entra na PSY. Mesmo formulário, dois movimentos automáticos.</p>
+      <div class="form-grid">
+        <div class="field"><label>Categoria</label><select class="big"><option>Tábuas</option></select></div>
+        <div class="field"><label>Produto</label><select class="big"><option>2500 x 100 x 90</option></select></div>
+        <div class="field"><label>Produto stock (auto)</label><input class="big readonly" value="2500 x 100 x 90" readonly></div>
+        <div class="field"><label>Stock atual MCF</label><input class="big readonly" value="84 malotes" readonly></div>
+        <div class="field"><label>Nº malotes a transferir</label><input class="big" type="number" value="6"></div>
+        <div class="field"><label>Peças/malote (auto)</label><input class="big readonly" value="108" readonly></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary btn-big">Limpar</button>
+        <button class="btn btn-primary btn-big">→ Transferir</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: INVENTARIO -->
+  <section class="tab" id="tab-inventario">
+    <div class="card">
+      <h2>📊 Inventário Permanente</h2>
+      <div class="company-toggle">
+        <button>Total (MCF + PSY)</button>
+        <button class="active">MCF</button>
+        <button>PSY</button>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Produtos distintos</div><div class="value">112</div></div>
+        <div class="kpi green"><div class="label">Total malotes</div><div class="value">2.847</div></div>
+        <div class="kpi orange"><div class="label">m³ em stock</div><div class="value">486,2</div></div>
+        <div class="kpi red"><div class="label">Stock crítico</div><div class="value">7</div><div class="delta">≤ 2 malotes</div></div>
+      </div>
+      <div class="search-bar">
+        <input placeholder="🔍 Procurar produto (ex: 2500x100)">
+        <select><option>Todas as categorias</option><option>Tábuas</option><option>Barrotes</option></select>
+        <button class="btn btn-secondary">📥 Exportar Excel</button>
+      </div>
+      <table>
+        <thead><tr><th>Produto</th><th>C × L × E</th><th>MCF</th><th>PSY</th><th>Total m³</th><th>Estado</th></tr></thead>
+        <tbody>
+          <tr><td>2500 x 100 x 90</td><td>2500 / 100 / 90</td><td>84 mal.</td><td>12 mal.</td><td>23,3</td><td><span class="tag tag-ok">OK</span></td></tr>
+          <tr><td>2500 x 145 x 77</td><td>2500 / 145 / 77</td><td>56 mal.</td><td>4 mal.</td><td>16,7</td><td><span class="tag tag-ok">OK</span></td></tr>
+          <tr><td>1200 x 98 x 15</td><td>1200 / 98 / 15</td><td>2 mal.</td><td>0 mal.</td><td>0,4</td><td><span class="tag" style="background:#ffebee;color:#c62828">CRÍTICO</span></td></tr>
+          <tr><td>2500 x 100 x 100</td><td>2500 / 100 / 100</td><td>33 mal.</td><td>8 mal.</td><td>10,2</td><td><span class="tag tag-ok">OK</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- TAB: MOVIMENTOS -->
+  <section class="tab" id="tab-movimentos">
+    <div class="card">
+      <h2>📅 Movimentos por Dia</h2>
+      <p class="sub">Para a contabilidade — clica no dia para marcar como "lançado no software interno".</p>
+      <div class="search-bar">
+        <input type="date" value="2026-04-07">
+        <select><option>MCF</option><option>PSY</option><option>Ambas</option></select>
+        <button class="btn btn-secondary">📥 Exportar dia</button>
+      </div>
+      <table>
+        <thead><tr><th>Hora</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>m³</th><th>Operador</th><th>Origem</th></tr></thead>
+        <tbody>
+          <tr><td>08:14</td><td><span class="tag tag-in">ENTRADA</span></td><td>2500 x 100 x 90</td><td>4 mal. (432 pç)</td><td>3,89</td><td>João S.</td><td>Produção MCF</td></tr>
+          <tr><td>09:32</td><td><span class="tag tag-out">SAÍDA</span></td><td>2500 x 145 x 77</td><td>2 mal.</td><td>1,54</td><td>Pedro M.</td><td>MCF → PSY</td></tr>
+          <tr><td>11:05</td><td><span class="tag tag-in">ENTRADA</span></td><td>1200 x 98 x 15</td><td>3 mal.</td><td>0,63</td><td>Gonçalo</td><td>Ajuste (Serbul)</td></tr>
+        </tbody>
+      </table>
+      <div class="checkbox-row">
+        <input type="checkbox" id="lanc">
+        <label for="lanc"><b>Marcar 2026-04-07 (MCF) como lançado no software interno</b> — fica visível ao próximo contabilista que abrir o dia</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: PEDIDOS -->
+  <section class="tab" id="tab-pedidos">
+    <div class="card">
+      <h2>📋 Pedidos de Transferência <span class="tab-badge">3 pendentes</span></h2>
+      <p class="sub">A PSY pede produto à MCF (ou vice-versa). Listagem simples.</p>
+      <div class="btn-row" style="justify-content:flex-start;margin:0 0 16px"><button class="btn btn-primary">+ Novo pedido</button></div>
+
+      <div class="req-list-item">
+        <div class="info"><b>2500 x 100 x 90 — 8 malotes</b><span class="meta">PSY pede a MCF · Pedido por Marco · 2026-04-07 09:12</span></div>
+        <div><span class="tag tag-pending">PENDENTE</span> <button class="btn btn-success">✓ Cumprir</button></div>
+      </div>
+      <div class="req-list-item">
+        <div class="info"><b>2500 x 145 x 77 — 4 malotes</b><span class="meta">PSY pede a MCF · Pedido por Ana · 2026-04-06 16:45</span></div>
+        <div><span class="tag tag-pending">PENDENTE</span> <button class="btn btn-success">✓ Cumprir</button></div>
+      </div>
+      <div class="req-list-item">
+        <div class="info"><b>1200 x 98 x 15 — 2 malotes</b><span class="meta">MCF pede a PSY · Pedido por Gonçalo · 2026-04-05 10:30</span></div>
+        <div><span class="tag tag-ok">CUMPRIDO</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: DUVIDAS -->
+  <section class="tab" id="tab-duvidas">
+    <div class="card">
+      <h2>❓ Dúvidas — validação manual</h2>
+      <p class="sub">Movimentos onde o operador marcou "incerteza" — admin valida ou corrige o produto antes de aplicar.</p>
+      <div class="req-list-item">
+        <div class="info"><b>Operador registou: 1200 x 95 x 18</b><span class="meta">João S. · 2026-04-07 14:20 · 3 malotes · "Não tinha bem a certeza se era 17 ou 18"</span></div>
+        <div>
+          <select style="padding:8px;border-radius:8px"><option>1200 x 95 x 18 ✓</option><option>1200 x 95 x 17</option></select>
+          <button class="btn btn-success">Validar</button>
+        </div>
+      </div>
+      <div class="req-list-item">
+        <div class="info"><b>Operador registou: 2500 x 100 x 100</b><span class="meta">Pedro M. · 2026-04-07 11:08 · 5 malotes</span></div>
+        <div>
+          <select style="padding:8px;border-radius:8px"><option>2500 x 100 x 100 ✓</option><option>2500 x 100 x 90</option></select>
+          <button class="btn btn-success">Validar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: AJUSTES -->
+  <section class="tab" id="tab-ajustes">
+    <div class="card">
+      <h2>⚙️ Ajustes de Stock (Admin)</h2>
+      <p class="sub">Entradas externas (fornecedores) ou correções de inventário.</p>
+      <div class="form-grid">
+        <div class="field"><label>Empresa</label><select class="big"><option>MCF</option><option>PSY</option></select></div>
+        <div class="field"><label>Tipo de ajuste</label><select class="big"><option>Entrada externa (fornecedor)</option><option>Correção positiva</option><option>Correção negativa</option><option>Inventário semestral</option></select></div>
+        <div class="field"><label>Fornecedor</label><select class="big"><option>Serbul</option><option>Lamelas</option><option>FiliCoelho</option><option>DRA</option></select></div>
+        <div class="field"><label>Produto</label><select class="big"><option>2500 x 100 x 90</option></select></div>
+        <div class="field"><label>Quantidade (malotes)</label><input class="big" type="number" value="10"></div>
+        <div class="field"><label>Justificação</label><input class="big" placeholder="ex: receção fatura #12345"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary btn-big">📥 Exportar Inv. Semestral (xlsx)</button>
+        <button class="btn btn-secondary btn-big">📤 Importar Inv. atualizado (xlsx)</button>
+        <button class="btn btn-primary btn-big">✓ Aplicar ajuste</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('tab-'+b.dataset.tab).classList.add('active');
+}));
+</script>
+</body>
+</html>
