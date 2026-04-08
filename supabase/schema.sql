@@ -43,7 +43,7 @@ create table if not exists movimentos (
   tipo text not null check (tipo in ('entrada_producao','transferencia','ajuste_entrada','ajuste_saida','inventario')),
   empresa text not null check (empresa in ('MCF','PSY')),
   empresa_destino text check (empresa_destino in ('MCF','PSY')), -- só para transferências
-  produto_stock text not null references mp_standard(produto_stock),
+  produto_stock text not null,
   malotes numeric not null,
   pecas_por_malote int not null,
   total_pecas numeric generated always as (malotes * pecas_por_malote) stored,
@@ -67,7 +67,7 @@ create index on movimentos(duvida_resolvida) where duvida_resolvida = false;
 create table if not exists pedidos (
   id uuid primary key default uuid_generate_v4(),
   empresa_pede text not null check (empresa_pede in ('MCF','PSY')),
-  produto_stock text not null references mp_standard(produto_stock),
+  produto_stock text not null,
   malotes numeric not null,
   solicitante_id uuid not null references profiles(id),
   estado text not null default 'pendente' check (estado in ('pendente','cumprido','cancelado')),
