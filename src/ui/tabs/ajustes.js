@@ -1,5 +1,6 @@
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
+import * as XLSX from 'xlsx';
 
 let mpCache = null;
 async function loadMP() {
@@ -44,7 +45,79 @@ export async function renderAjustes(el, ctx) {
         </div>
       </form>
     </div>
+
+    <div class="card">
+      <h2>📊 Inventário semestral (.xlsx)</h2>
+      <p class="sub">Exporta o stock atual para contagem em papel. Depois importa o ficheiro corrigido e aplica como inventário novo (substitui stock).</p>
+      <div class="btn-row" style="justify-content:flex-start">
+        <button class="btn btn-secondary btn-big" id="btnExp">📥 Exportar inventário (.xlsx)</button>
+        <label class="btn btn-secondary btn-big" style="cursor:pointer;margin:0">
+          📤 Importar inventário
+          <input type="file" id="impFile" accept=".xlsx,.xls" style="display:none">
+        </label>
+      </div>
+      <div id="impPreview"></div>
+    </div>
   `;
+  // Export
+  el.querySelector('#btnExp').onclick = async () => {
+    const { data } = await supabase.from('v_stock').select('*').order('produto_stock');
+    const rows = [['Produto','Empresa','Malotes','m3','Malotes_contados','Observacoes']];
+    (data||[]).forEach(r => rows.push([r.produto_stock, r.empresa, Number(r.malotes||0), Number(r.m3||0), '', '']));
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:22},{wch:10},{wch:12},{wch:10},{wch:18},{wch:30}];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+    const dt = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `inventario_${dt}.xlsx`);
+    toast('✓ Exportado','success');
+  };
+  // Import
+  el.querySelector('#impFile').onchange = async (ev) => {
+    const file = ev.target.files[0]; if (!file) return;
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws);
+    // Esperado: Produto, Empresa, Malotes_contados
+    const diffs = [];
+    for (const r of rows) {
+      const prod = r.Produto || r.produto;
+      const emp = r.Empresa || r.empresa;
+      const cnt = parseFloat(r.Malotes_contados || r.malotes_contados);
+      if (!prod || !emp || isNaN(cnt)) continue;
+      diffs.push({ produto: String(prod).trim(), empresa: String(emp).trim().toUpperCase(), malotes_contados: cnt });
+    }
+    el.querySelector('#impPreview').innerHTML = `
+      <div style="margin-top:16px;padding:16px;background:#fff3e0;border-radius:12px">
+        <h3>⚠️ Pré-visualização da importação</h3>
+        <p>${diffs.length} linhas válidas. Vai criar um movimento tipo <b>inventário</b> para cada.</p>
+        <div style="max-height:300px;overflow:auto;margin:10px 0;background:#fff;border-radius:8px;padding:10px">
+          <table style="width:100%;font-size:.85rem"><thead><tr><th style="text-align:left">Produto</th><th>Empresa</th><th>Malotes</th></tr></thead>
+          <tbody>${diffs.slice(0,20).map(d=>`<tr><td>${d.produto}</td><td>${d.empresa}</td><td style="text-align:right">${d.malotes_contados}</td></tr>`).join('')}</tbody></table>
+          ${diffs.length>20?`<p style="color:#888">... e mais ${diffs.length-20} linhas</p>`:''}
+        </div>
+        <button class="btn btn-danger" id="confirmImp">⚠️ Aplicar inventário (substitui stock)</button>
+      </div>
+    `;
+    el.querySelector('#confirmImp').onclick = async () => {
+      if (!confirm(`Aplicar ${diffs.length} linhas como inventário? Esta operação cria movimentos novos e não reverte os anteriores automaticamente.`)) return;
+      const mp = await loadMP();
+      const batch = diffs.map(d => {
+        const p = mp.find(x => x.produto_stock === d.produto);
+        const pm = p?.pecas_por_malote || 0;
+        const m3 = p ? (p.comprimento/1000)*(p.largura/1000)*(p.espessura/1000)*pm*d.malotes_contados : 0;
+        return {
+          tipo:'inventario', empresa:d.empresa, produto_stock:d.produto,
+          malotes:d.malotes_contados, pecas_por_malote:pm, m3:+m3.toFixed(4),
+          operador_id:ctx.profile.id, justificacao:'Inventário semestral importado '+new Date().toISOString().slice(0,10),
+        };
+      });
+      const { error } = await supabase.from('movimentos').insert(batch);
+      if (error) return toast('Erro: '+error.message,'error');
+      toast(`✓ ${batch.length} linhas aplicadas`,'success');
+      el.querySelector('#impPreview').innerHTML = '';
+    };
+  };
 
   const $ = id => el.querySelector('#'+id);
   const tipoSel = $('tipo'), fornBox = $('fornBox');

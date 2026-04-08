@@ -27,6 +27,10 @@ body{font-family:var(--font);background:var(--color-bg);color:var(--color-text);
 .header-right{display:flex;align-items:center;gap:12px}
 .sync-pill{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#eef7ee;color:#1f7a3a;border-radius:999px;font-size:.78rem;font-weight:600}
 .sync-pill.reloading{background:#e3f2fd;color:#0d47a1}
+.sync-pill.offline{background:#ffebee;color:#c62828}
+.sync-pill.offline .sync-dot{background:#c62828;animation:none}
+.sync-pill.queued{background:#fff8e1;color:#f57f17}
+.sync-pill.queued .sync-dot{background:#f57f17}
 .sync-dot{width:8px;height:8px;border-radius:50%;background:#34C759;animation:pulse 2s infinite}
 .sync-pill.reloading .sync-dot{background:#007AFF;animation:pulse .6s infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.4)}}

@@ -6,6 +6,8 @@ import { renderMovimentos } from './tabs/movimentos.js';
 import { renderPedidos, countPedidosPendentes } from './tabs/pedidos.js';
 import { renderDuvidas, countDuvidas } from './tabs/duvidas.js';
 import { renderAjustes } from './tabs/ajustes.js';
+import { canViewTab } from '../permissions.js';
+import { getPendingCount, sync } from '../offline.js';
 
 const TABS = [
   { id: 'malotes',    label: 'Malotes Produção', icon: '📦', render: renderMalotes },
@@ -19,8 +21,15 @@ const TABS = [
 
 let currentTab = 'malotes';
 let reloadTimer = null;
+let badges = { pedidos: 0, duvidas: 0, pending: 0 };
+let currentProfile = null;
 
 export function renderApp(root, profile) {
+  currentProfile = profile;
+  // tab inicial: primeira permitida
+  const allowed = TABS.filter(t => canViewTab(profile, t.id));
+  if (!allowed.find(t => t.id === currentTab)) currentTab = allowed[0]?.id || 'malotes';
+
   root.innerHTML = `
     <header class="app-header">
       <div class="header-content">
@@ -36,50 +45,77 @@ export function renderApp(root, profile) {
       <section id="tabContent"></section>
     </main>
   `;
-  drawNav(profile);
+  drawNav();
   root.querySelector('#tabNav').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (!btn) return;
     currentTab = btn.dataset.tab;
-    drawNav(profile);
-    renderCurrentTab(profile);
+    drawNav();
+    renderCurrentTab();
   });
   root.querySelector('#userChip').addEventListener('click', async () => {
     if (confirm('Terminar sessão?')) await supabase.auth.signOut();
   });
-  renderCurrentTab(profile);
+  renderCurrentTab();
   refreshBadges();
+  updateSyncPill();
 
   if (reloadTimer) clearInterval(reloadTimer);
-  reloadTimer = setInterval(() => {
+  reloadTimer = setInterval(async () => {
+    if (!navigator.onLine) { updateSyncPill(); return; }
     const pill = document.getElementById('syncPill');
     const txt = document.getElementById('syncText');
     if (!pill) return;
     pill.classList.add('reloading');
     txt.textContent = 'A sincronizar...';
+    await sync();
     setTimeout(() => {
-      renderCurrentTab(profile);
+      renderCurrentTab();
       refreshBadges();
-      pill.classList.remove('reloading');
-      txt.textContent = 'Sincronizado';
-    }, 800);
+      updateSyncPill();
+    }, 500);
   }, 60000);
+
+  // listeners de rede
+  window.addEventListener('online', updateSyncPill);
+  window.addEventListener('offline', updateSyncPill);
+  window.addEventListener('sync-done', () => { refreshBadges(); updateSyncPill(); });
 }
 
-let badges = { pedidos: 0, duvidas: 0 };
+async function updateSyncPill() {
+  const pill = document.getElementById('syncPill');
+  const txt = document.getElementById('syncText');
+  if (!pill) return;
+  badges.pending = await getPendingCount();
+  pill.classList.remove('reloading');
+  pill.classList.remove('offline');
+  pill.classList.remove('queued');
+  if (!navigator.onLine) {
+    pill.classList.add('offline');
+    txt.textContent = badges.pending ? `🔌 Offline · ${badges.pending} pendentes` : '🔌 Offline';
+  } else if (badges.pending) {
+    pill.classList.add('queued');
+    txt.textContent = `📤 ${badges.pending} por sincronizar`;
+  } else {
+    txt.textContent = 'Sincronizado';
+  }
+}
 
 async function refreshBadges() {
   try {
-    badges.pedidos = await countPedidosPendentes();
-    badges.duvidas = await countDuvidas();
+    if (navigator.onLine) {
+      badges.pedidos = await countPedidosPendentes();
+      badges.duvidas = await countDuvidas();
+    }
     drawNav();
   } catch(e) { console.error(e); }
 }
 
-function drawNav(profile) {
+function drawNav() {
   const nav = document.getElementById('tabNav');
   if (!nav) return;
-  nav.innerHTML = TABS.map(t => {
+  const visible = TABS.filter(t => canViewTab(currentProfile, t.id));
+  nav.innerHTML = visible.map(t => {
     let badge = '';
     if (t.id === 'pedidos' && badges.pedidos) badge = `<span class="tab-badge">${badges.pedidos}</span>`;
     if (t.id === 'duvidas' && badges.duvidas) badge = `<span class="tab-badge">${badges.duvidas}</span>`;
@@ -89,10 +125,14 @@ function drawNav(profile) {
   }).join('');
 }
 
-function renderCurrentTab(profile) {
+function renderCurrentTab() {
   const content = document.getElementById('tabContent');
   const tab = TABS.find(t => t.id === currentTab);
-  tab.render(content, { profile });
+  if (!canViewTab(currentProfile, currentTab)) {
+    content.innerHTML = `<div class="card"><h2>🔒 Sem permissão</h2><p class="sub">O teu perfil (${currentProfile.perfil}) não tem acesso a esta tab.</p></div>`;
+    return;
+  }
+  tab.render(content, { profile: currentProfile });
 }
 
 export function toast(msg, type='') {

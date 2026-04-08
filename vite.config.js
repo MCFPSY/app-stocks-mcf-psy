@@ -5,7 +5,17 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['icon.svg'],
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,ico,png,woff2}'],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/hhrxxfnxacymwwwpvazk\.supabase\.co\/rest\/v1\/mp_standard.*/,
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'mp-standard', expiration: { maxAgeSeconds: 86400 * 7 } }
+          }
+        ]
+      },
       manifest: {
         name: 'Stocks MCF + PSY',
         short_name: 'Stocks',
@@ -16,8 +26,7 @@ export default defineConfig({
         orientation: 'any',
         start_url: '/',
         icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' }
+          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }
         ]
       }
     })

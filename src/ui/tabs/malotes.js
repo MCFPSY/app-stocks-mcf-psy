@@ -1,14 +1,20 @@
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
+import { addMovimento, cachePut, cacheGet } from '../../offline.js';
 
 let mpCache = null;
 
 async function loadMP() {
   if (mpCache) return mpCache;
-  const { data, error } = await supabase.from('mp_standard').select('*').eq('ativo', true).order('produto_stock');
-  if (error) { toast('Erro a carregar produtos: '+error.message, 'error'); return []; }
-  mpCache = data;
-  return data;
+  if (navigator.onLine) {
+    const { data, error } = await supabase.from('mp_standard').select('*').eq('ativo', true).order('produto_stock');
+    if (!error && data) { mpCache = data; await cachePut('mp_standard', data); return data; }
+  }
+  // offline fallback
+  const cached = await cacheGet('mp_standard');
+  if (cached) { mpCache = cached; return cached; }
+  toast('Sem produtos em cache — liga à internet uma vez para os descarregar','error');
+  return [];
 }
 
 export async function renderMalotes(el, ctx) {
@@ -132,7 +138,7 @@ export async function renderMalotes(el, ctx) {
     if (!ok) return;
 
     const subBtn = $('subBtn'); subBtn.disabled = true; subBtn.textContent = 'A gravar...';
-    const { error } = await supabase.from('movimentos').insert({
+    const res = await addMovimento({
       tipo: 'entrada_producao',
       empresa: 'MCF',
       produto_stock: p.produto_stock,
@@ -144,9 +150,9 @@ export async function renderMalotes(el, ctx) {
       duvida_resolvida: !inc,
     });
     subBtn.disabled = false; subBtn.textContent = '✓ Registar entrada';
-    if (error) { toast('Erro: '+error.message,'error'); return; }
-    toast('✓ Entrada registada','success');
+    toast(res.offline ? '📤 Guardado offline — sincroniza quando houver rede' : '✓ Entrada registada','success');
     nMal.value=''; recalc();
+    window.dispatchEvent(new CustomEvent('sync-done'));
   });
 
   fillProducts();

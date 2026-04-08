@@ -1,11 +1,16 @@
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
+import { addMovimento, cachePut, cacheGet } from '../../offline.js';
 
 let mpCache = null;
 async function loadMP() {
   if (mpCache) return mpCache;
-  const { data } = await supabase.from('mp_standard').select('*').eq('ativo', true).order('produto_stock');
-  mpCache = data || []; return mpCache;
+  if (navigator.onLine) {
+    const { data } = await supabase.from('mp_standard').select('*').eq('ativo', true).order('produto_stock');
+    if (data) { mpCache = data; await cachePut('mp_standard', data); return data; }
+  }
+  mpCache = (await cacheGet('mp_standard')) || [];
+  return mpCache;
 }
 
 async function getStockMCF(produto_stock) {
@@ -100,15 +105,15 @@ export async function renderTransfer(el, ctx) {
     });
     if (!ok) return;
     const btn = $('subBtn'); btn.disabled=true; btn.textContent='A gravar...';
-    const { error } = await supabase.from('movimentos').insert({
+    const res = await addMovimento({
       tipo:'transferencia', empresa:'MCF', empresa_destino:'PSY',
       produto_stock:p.produto_stock, malotes:nm, pecas_por_malote:p.pecas_por_malote, m3:m3v,
       operador_id:ctx.profile.id, incerteza:inc, duvida_resolvida:!inc,
     });
     btn.disabled=false; btn.textContent='→ Transferir';
-    if (error) return toast('Erro: '+error.message,'error');
-    toast('✓ Transferência registada','success');
+    toast(res.offline ? '📤 Guardado offline — sincroniza quando houver rede' : '✓ Transferência registada','success');
     nMal.value=''; recalc(); onProd();
+    window.dispatchEvent(new CustomEvent('sync-done'));
   };
   fillProducts();
 }

@@ -1,7 +1,10 @@
 import { supabase, getProfile } from './supabase.js';
 import { renderLogin } from './ui/login.js';
 import { renderApp } from './ui/app.js';
+import './offline.js';
 import './styles.css';
+import { registerSW } from 'virtual:pwa-register';
+registerSW({ immediate: true });
 
 const root = document.getElementById('root');
 
