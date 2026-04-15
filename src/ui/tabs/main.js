@@ -145,31 +145,37 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
   const movs = movRes.data || [];
   const bmMap = new Map((bmRes.data || []).map(b => [`${b.produto_stock}|${b.tipo_linha}`, Number(b.target_m3_malote)]));
 
-  // Aggregate past weeks: linha -> weekKey -> { m3, plano }
+  // Aggregate past weeks: linha -> weekKey -> { m3, plano, produtos(Set) }
+  // plano = sum of benchmark per DISTINCT product produced (not × malotes)
   const weekly = new Map();
   for (const l of linhas) weekly.set(l.nome, {});
   for (const r of semanal) {
     if (!pastWeeks.find(w => w.key === r.semana)) continue;
     const linha = linhas.find(l => l.nome === r.linha); if (!linha) continue;
     const buck = weekly.get(linha.nome);
-    if (!buck[r.semana]) buck[r.semana] = { m3: 0, plano: 0 };
-    const bm = bmMap.get(`${r.produto_stock}|${linha.tipo_benchmark}`);
+    if (!buck[r.semana]) buck[r.semana] = { m3: 0, plano: 0, produtos: new Set() };
     buck[r.semana].m3 += Number(r.m3_total || 0);
-    buck[r.semana].plano += bm ? bm * Number(r.malotes_total || 0) : 0;
+    if (!buck[r.semana].produtos.has(r.produto_stock)) {
+      buck[r.semana].produtos.add(r.produto_stock);
+      const bm = bmMap.get(`${r.produto_stock}|${linha.tipo_benchmark}`);
+      buck[r.semana].plano += bm || 0;
+    }
   }
 
-  // Aggregate current week by day: linha -> dayIso -> { m3, plano }
+  // Aggregate current week by day: linha -> dayIso -> { m3, plano, produtos }
   const byDay = new Map();
   for (const l of linhas) byDay.set(l.nome, {});
   for (const m of movs) {
     const linha = linhas.find(l => l.nome === m.linha); if (!linha) continue;
     const d = m.data_registo || m.criado_em.slice(0,10);
     const buck = byDay.get(linha.nome);
-    if (!buck[d]) buck[d] = { m3: 0, plano: 0, malotes: 0 };
-    const bm = bmMap.get(`${m.produto_stock}|${linha.tipo_benchmark}`);
+    if (!buck[d]) buck[d] = { m3: 0, plano: 0, produtos: new Set() };
     buck[d].m3 += Number(m.m3 || 0);
-    buck[d].malotes += Number(m.malotes || 0);
-    buck[d].plano += bm ? bm * Number(m.malotes || 0) : 0;
+    if (!buck[d].produtos.has(m.produto_stock)) {
+      buck[d].produtos.add(m.produto_stock);
+      const bm = bmMap.get(`${m.produto_stock}|${linha.tipo_benchmark}`);
+      buck[d].plano += bm || 0;
+    }
   }
 
   // Build rows (track real + plano per cell for per-cell coloring)
