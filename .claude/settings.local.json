@@ -49,7 +49,9 @@
       "Bash(gh workflow:*)",
       "Bash(gh run:*)",
       "Bash(node scripts/import_mcf_linhas.js)",
-      "Bash(node scripts/import_aux_benchmark.js)"
+      "Bash(node scripts/import_aux_benchmark.js)",
+      "Bash(curl -s \"https://hhrxxfnxacymwwwpvazk.supabase.co/rest/v1/movimentos?select=produto_stock,linha,malotes,m3,data_registo&tipo=eq.entrada_producao&empresa=eq.MCF&order=criado_em.desc&limit=5\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTU4MDI1OSwiZXhwIjoyMDkxMTU2MjU5fQ.WOfXti2xJhqBNyNlwu2L5c8nrUCBiJYGy-wclcBHEas\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTU4MDI1OSwiZXhwIjoyMDkxMTU2MjU5fQ.WOfXti2xJhqBNyNlwu2L5c8nrUCBiJYGy-wclcBHEas\")",
+      "Bash(curl -s \"https://hhrxxfnxacymwwwpvazk.supabase.co/rest/v1/aux_benchmark?produto_stock=eq.1000x112x17&select=*\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTU4MDI1OSwiZXhwIjoyMDkxMTU2MjU5fQ.WOfXti2xJhqBNyNlwu2L5c8nrUCBiJYGy-wclcBHEas\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTU4MDI1OSwiZXhwIjoyMDkxMTU2MjU5fQ.WOfXti2xJhqBNyNlwu2L5c8nrUCBiJYGy-wclcBHEas\")"
     ]
   }
 }

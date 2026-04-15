@@ -391,7 +391,7 @@ function buildTable({
             ${noPlan ? '' : pctCell(r.pastAccReal, r.pastAccPlan)}
 
             ${gap}
-            ${r.dailyCells.map((c,i) => valCell(c, days[i].todayFlag ? 'background:#fffbe6' : '')).join('')}
+            ${r.dailyCells.map((c,i) => valCell(c)).join('')}
             ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.weekPlan)}</td>`}
             ${valCell({ real: r.weekReal, plano: r.weekPlan }, 'background:#f7faff;font-weight:600')}
             ${noPlan ? '' : pctCell(r.weekReal, r.weekPlan)}
@@ -412,7 +412,7 @@ function buildTable({
             ${noPlan ? '' : pctCellTot(pastAccRealTot, pastAccPlanTot)}
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
-            ${dailyTot.map((c,i) => valCellTot(c, days[i].todayFlag ? 'background:#fff3cd' : '')).join('')}
+            ${dailyTot.map((c,i) => valCellTot(c)).join('')}
             ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(weekPlanTot)}</td>`}
             ${valCellTot({ real: weekRealTot, plano: weekPlanTot })}
             ${noPlan ? '' : pctCellTot(weekRealTot, weekPlanTot)}
