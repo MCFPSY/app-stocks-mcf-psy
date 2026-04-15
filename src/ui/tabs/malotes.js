@@ -3,6 +3,7 @@ import { toast } from '../app.js';
 import { addMovimento, cachePut, cacheGet } from '../../offline.js';
 
 let mpCache = null;
+let linhasCache = null;
 
 async function loadMP() {
   if (mpCache) return mpCache;
@@ -10,16 +11,26 @@ async function loadMP() {
     const { data, error } = await supabase.from('mp_standard').select('*').eq('ativo', true).order('produto_stock');
     if (!error && data) { mpCache = data; await cachePut('mp_standard', data); return data; }
   }
-  // offline fallback
   const cached = await cacheGet('mp_standard');
   if (cached) { mpCache = cached; return cached; }
   toast('Sem produtos em cache — liga à internet uma vez para os descarregar','error');
   return [];
 }
 
+async function loadLinhasMCF() {
+  if (linhasCache) return linhasCache;
+  if (navigator.onLine) {
+    const { data } = await supabase.from('mcf_linhas').select('*').eq('ativo', true).order('ordem');
+    if (data) { linhasCache = data; await cachePut('mcf_linhas', data); return data; }
+  }
+  const cached = await cacheGet('mcf_linhas');
+  linhasCache = cached || [];
+  return linhasCache;
+}
+
 export async function renderMalotes(el, ctx) {
   el.innerHTML = `<div class="card"><h2>📦 Registos de Produção MCF</h2><p class="sub">A carregar produtos...</p></div>`;
-  const mp = await loadMP();
+  const [mp, linhas] = await Promise.all([loadMP(), loadLinhasMCF()]);
 
   // produtos únicos por (categoria, produto_conversao || produto_stock)
   const cats = [...new Set(mp.map(x => x.categoria))];
@@ -34,6 +45,20 @@ export async function renderMalotes(el, ctx) {
           <div class="field">
             <label>Data do registo</label>
             <input class="big" id="dataRegisto" type="date" value="${new Date().toISOString().slice(0,10)}">
+          </div>
+          <div class="field">
+            <label>Linha de produção</label>
+            <select id="linha" style="width:100%;padding:14px 16px;border:2px solid var(--color-border);border-radius:12px;font-size:1rem;background:#fff;min-height:54px">
+              ${linhas.map(l => `<option value="${l.nome}">${l.nome}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Turno</label>
+            <select class="big" id="turno">
+              <option value="T1">T1</option>
+              <option value="T2">T2</option>
+              <option value="T3">T3</option>
+            </select>
           </div>
           <div class="field">
             <label>Categoria</label>
@@ -149,10 +174,16 @@ export async function renderMalotes(el, ctx) {
     const dataReg = $('dataRegisto').value;
     if (!dataReg) { toast('Indica a data do registo','error'); return; }
 
+    const linha = $('linha').value;
+    const turno = $('turno').value;
+    if (!linha) { toast('Indica a linha de produção','error'); return; }
+
     const obs = inc ? ($('observacoes').value || '').trim() : '';
 
     const ok = await showSummary({
       Data: dataReg,
+      Linha: linha,
+      Turno: turno,
       Empresa: 'MCF',
       Produto: p.produto_stock,
       'Malotes × peças': `${nm} × ${np} = ${tot}`,
@@ -174,6 +205,8 @@ export async function renderMalotes(el, ctx) {
       incerteza: inc,
       duvida_resolvida: !inc,
       data_registo: dataReg,
+      linha,
+      turno,
       ...(obs ? { justificacao: obs } : {}),
     });
     subBtn.disabled = false; subBtn.textContent = '✓ Registar entrada';

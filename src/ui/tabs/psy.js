@@ -48,7 +48,7 @@ export async function renderPSY(el, ctx) {
         <div class="form-grid">
           <div class="field">
             <label>Linha de produção</label>
-            <select class="big" id="linha">
+            <select id="linha" style="width:100%;padding:14px 16px;border:2px solid var(--color-border);border-radius:12px;font-size:1rem;background:#fff;min-height:54px">
               ${linhas.map(l => `<option value="${l.nome}">${l.nome}</option>`).join('')}
             </select>
           </div>

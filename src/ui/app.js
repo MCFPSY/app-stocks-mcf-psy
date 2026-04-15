@@ -7,10 +7,12 @@ import { renderPedidos, countPedidosPendentes } from './tabs/pedidos.js';
 import { renderDuvidas, countDuvidas } from './tabs/duvidas.js';
 import { renderAjustes } from './tabs/ajustes.js';
 import { renderPSY } from './tabs/psy.js';
+import { renderMain } from './tabs/main.js';
 import { canViewTab } from '../permissions.js';
 import { getPendingCount, sync } from '../offline.js';
 
 const TABS = [
+  { id: 'main',       label: 'Dashboard',             icon: '📈', render: renderMain },
   { id: 'malotes',    label: 'Registos Produção MCF', icon: '📦', render: renderMalotes },
   { id: 'psy',        label: 'Registos Produção PSY', icon: '🏭', render: renderPSY },
   { id: 'transfer',   label: 'Transferências',   icon: '🔄', render: renderTransfer },
@@ -21,7 +23,7 @@ const TABS = [
   { id: 'ajustes',    label: 'Ajustes',           icon: '⚙️', render: renderAjustes },
 ];
 
-let currentTab = 'malotes';
+let currentTab = 'main';
 let reloadTimer = null;
 let badges = { pedidos: 0, duvidas: 0, pending: 0 };
 let currentProfile = null;
