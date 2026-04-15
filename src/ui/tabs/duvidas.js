@@ -30,9 +30,13 @@ async function render(el, ctx) {
   lista.innerHTML = duvidas.map(d => `
     <div style="padding:16px;border:1px solid #d2d2d7;border-radius:12px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-        <div><b>${d.tipo}</b> · ${d.empresa}${d.empresa_destino?'→'+d.empresa_destino:''} · ${Number(d.malotes).toFixed(2)} malotes</div>
-        <div style="font-size:.8rem;color:#6e6e73">${d.profiles?.nome||'—'} · ${new Date(d.criado_em).toLocaleString('pt-PT')}</div>
+        <div><b>${d.tipo}</b> · ${d.empresa}${d.empresa_destino?'→'+d.empresa_destino:''} · ${Number(d.malotes).toFixed(2)} malotes · <b>${d.produto_stock}</b></div>
+        <div style="font-size:.8rem;color:#6e6e73">
+          ${d.profiles?.nome||'—'} · ${new Date(d.criado_em).toLocaleString('pt-PT')}
+          ${d.data_registo ? ` · <b>Produção: ${d.data_registo}</b>` : ''}
+        </div>
       </div>
+      ${d.justificacao ? `<div style="background:#fff8e1;padding:10px 14px;border-radius:8px;margin-bottom:10px;font-size:.9rem"><b>Obs:</b> ${d.justificacao}</div>` : ''}
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <label style="font-size:.85rem">Produto correto:</label>
         <select data-prod="${d.id}" style="padding:10px;border:1px solid #d2d2d7;border-radius:10px;flex:1;min-width:200px">

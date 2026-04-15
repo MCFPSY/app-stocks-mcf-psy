@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host --port 5173",
+    "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^17.4.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

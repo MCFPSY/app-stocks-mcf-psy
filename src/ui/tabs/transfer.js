@@ -90,6 +90,7 @@ export async function renderTransfer(el, ctx) {
     const p = current(); if (!p) return;
     const nm = parseFloat(nMal.value);
     if (!nm || nm <= 0) return toast('Indica o número de malotes','error');
+    if (!p.pecas_por_malote || p.pecas_por_malote <= 0) return toast('Peças por malote tem de ser > 0','error');
     const sMCF = await getStockMCF(p.produto_stock);
     if (nm > sMCF) return toast(`Stock MCF insuficiente (${sMCF} malotes)`,'error');
     const tot = nm * p.pecas_por_malote;
