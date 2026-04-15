@@ -6,11 +6,13 @@ import { renderMovimentos } from './tabs/movimentos.js';
 import { renderPedidos, countPedidosPendentes } from './tabs/pedidos.js';
 import { renderDuvidas, countDuvidas } from './tabs/duvidas.js';
 import { renderAjustes } from './tabs/ajustes.js';
+import { renderPSY } from './tabs/psy.js';
 import { canViewTab } from '../permissions.js';
 import { getPendingCount, sync } from '../offline.js';
 
 const TABS = [
-  { id: 'malotes',    label: 'Malotes Produção', icon: '📦', render: renderMalotes },
+  { id: 'malotes',    label: 'Registos Produção MCF', icon: '📦', render: renderMalotes },
+  { id: 'psy',        label: 'Registos Produção PSY', icon: '🏭', render: renderPSY },
   { id: 'transfer',   label: 'Transferências',   icon: '🔄', render: renderTransfer },
   { id: 'inventario', label: 'Inventário',        icon: '📊', render: renderInventario },
   { id: 'movimentos', label: 'Movimentos',        icon: '📅', render: renderMovimentos },

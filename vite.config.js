@@ -1,10 +1,14 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const isProd = process.env.NODE_ENV === 'production';
+
 export default defineConfig({
+  base: isProd ? '/app-stocks-mcf-psy/' : '/',
   plugins: [
-    VitePWA({
+    isProd ? VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
       includeAssets: ['icon.svg'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,ico,png,woff2}'],
@@ -29,7 +33,7 @@ export default defineConfig({
           { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }
         ]
       }
-    })
-  ],
-  server: { port: 5173 }
+    }) : null
+  ].filter(Boolean),
+  server: { port: parseInt(process.env.PORT || '5173'), host: true }
 });
