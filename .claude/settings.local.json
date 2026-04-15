@@ -43,7 +43,13 @@
       "Bash(curl -s \"https://hhrxxfnxacymwwwpvazk.supabase.co/rest/v1/psy_linhas?select=nome&limit=3\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODAyNTksImV4cCI6MjA5MTE1NjI1OX0.BYaf3CnzVLWKYF9QesEbCz2dXqLMfGV4Pv0vedJMOa0\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODAyNTksImV4cCI6MjA5MTE1NjI1OX0.BYaf3CnzVLWKYF9QesEbCz2dXqLMfGV4Pv0vedJMOa0\")",
       "Bash(curl -s \"https://hhrxxfnxacymwwwpvazk.supabase.co/rest/v1/psy_produtos?select=nome&limit=3\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODAyNTksImV4cCI6MjA5MTE1NjI1OX0.BYaf3CnzVLWKYF9QesEbCz2dXqLMfGV4Pv0vedJMOa0\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhocnh4Zm54YWN5bXd3d3B2YXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODAyNTksImV4cCI6MjA5MTE1NjI1OX0.BYaf3CnzVLWKYF9QesEbCz2dXqLMfGV4Pv0vedJMOa0\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://mcfpsy.github.io/app-stocks-mcf-psy/\")",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh secret:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh run:*)",
+      "Bash(node scripts/import_mcf_linhas.js)",
+      "Bash(node scripts/import_aux_benchmark.js)"
     ]
   }
 }
