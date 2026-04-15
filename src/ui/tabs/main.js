@@ -47,15 +47,15 @@ function previousWeeks(baseYear, baseWeek, n) {
 // ========================================================
 function pctColor(p) {
   if (!p) return '#6e6e73';
-  if (p >= 100) return '#1b5e20';
-  if (p >= 85)  return '#f57f17';
-  return '#c62828';
+  if (p >= 95) return '#1b5e20';
+  if (p <  85) return '#c62828';
+  return '#1d1d1f';
 }
 function pctBg(p) {
   if (!p) return '';
-  if (p >= 100) return 'background:#d4edda;';
-  if (p >= 85)  return 'background:#fff3cd;';
-  return 'background:#f8d7da;';
+  if (p >= 95) return 'background:rgba(76,175,80,0.18);';
+  if (p <  85) return 'background:rgba(244,67,54,0.18);';
+  return '';
 }
 
 // ========================================================
@@ -172,17 +172,17 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     buck[d].plano += bm ? bm * Number(m.malotes || 0) : 0;
   }
 
-  // Build rows
+  // Build rows (track real + plano per cell for per-cell coloring)
   const rows = linhas.map(l => {
     const pastBuck = weekly.get(l.nome);
-    const pastWeekly = pastWeeks.map(w => (pastBuck[w.key]?.m3) || 0);
-    const pastAccReal = pastWeekly.reduce((s,v) => s+v, 0);
-    const pastAccPlan = pastWeeks.reduce((s,w) => s + ((pastBuck[w.key]?.plano) || 0), 0);
+    const pastWeekly = pastWeeks.map(w => ({ real: (pastBuck[w.key]?.m3) || 0, plano: (pastBuck[w.key]?.plano) || 0 }));
+    const pastAccReal = pastWeekly.reduce((s,c) => s+c.real, 0);
+    const pastAccPlan = pastWeekly.reduce((s,c) => s+c.plano, 0);
 
     const dayBuck = byDay.get(l.nome);
-    const dailyCells = days.map(d => (dayBuck[d.iso]?.m3) || 0);
-    const weekReal = dailyCells.reduce((s,v) => s+v, 0);
-    const weekPlan = days.reduce((s,d) => s + ((dayBuck[d.iso]?.plano) || 0), 0);
+    const dailyCells = days.map(d => ({ real: (dayBuck[d.iso]?.m3) || 0, plano: (dayBuck[d.iso]?.plano) || 0 }));
+    const weekReal = dailyCells.reduce((s,c) => s+c.real, 0);
+    const weekPlan = dailyCells.reduce((s,c) => s+c.plano, 0);
 
     const todayReal = (dayBuck[dayIso]?.m3) || 0;
     const todayPlan = (dayBuck[dayIso]?.plano) || 0;
@@ -195,18 +195,22 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     };
   });
 
-  // Totals (respecting +/- sinal)
-  const applySinal = (arr, linhasArr, key) => arr.map((_, i) =>
-    arr.reduce((s, _r, idx) => s + (linhasArr[idx].sinal === '-' ? -rows[idx][key][i] : rows[idx][key][i]), 0)
-  );
-  const pastWeeklyTot = pastWeeks.map((_, i) => rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.pastWeekly[i] : r.pastWeekly[i]), 0));
-  const dailyTot = days.map((_, i) => rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.dailyCells[i] : r.dailyCells[i]), 0));
-  const pastAccRealTot = rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.pastAccReal : r.pastAccReal), 0);
-  const pastAccPlanTot = rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.pastAccPlan : r.pastAccPlan), 0);
-  const weekRealTot = rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.weekReal : r.weekReal), 0);
-  const weekPlanTot = rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.weekPlan : r.weekPlan), 0);
-  const todayRealTot = rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.todayReal : r.todayReal), 0);
-  const todayPlanTot = rows.reduce((s,r) => s + (r.linha.sinal === '-' ? -r.todayPlan : r.todayPlan), 0);
+  // Totals (respecting +/- sinal) — each cell now has {real, plano}
+  const sign = l => l.sinal === '-' ? -1 : 1;
+  const pastWeeklyTot = pastWeeks.map((_, i) => ({
+    real: rows.reduce((s,r) => s + sign(r.linha) * r.pastWeekly[i].real, 0),
+    plano: rows.reduce((s,r) => s + sign(r.linha) * r.pastWeekly[i].plano, 0),
+  }));
+  const dailyTot = days.map((_, i) => ({
+    real: rows.reduce((s,r) => s + sign(r.linha) * r.dailyCells[i].real, 0),
+    plano: rows.reduce((s,r) => s + sign(r.linha) * r.dailyCells[i].plano, 0),
+  }));
+  const pastAccRealTot = rows.reduce((s,r) => s + sign(r.linha) * r.pastAccReal, 0);
+  const pastAccPlanTot = rows.reduce((s,r) => s + sign(r.linha) * r.pastAccPlan, 0);
+  const weekRealTot = rows.reduce((s,r) => s + sign(r.linha) * r.weekReal, 0);
+  const weekPlanTot = rows.reduce((s,r) => s + sign(r.linha) * r.weekPlan, 0);
+  const todayRealTot = rows.reduce((s,r) => s + sign(r.linha) * r.todayReal, 0);
+  const todayPlanTot = rows.reduce((s,r) => s + sign(r.linha) * r.todayPlan, 0);
   const totalHC = rows.reduce((s,r) => s + (r.linha.hc || 0), 0);
 
   el.innerHTML = buildTable({
@@ -248,18 +252,24 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
     const label = rd.turno ? `${rd.linha} ${rd.turno}` : rd.linha;
     const match = (r) => r.linha === rd.linha && (!rd.turno || r.turno === rd.turno);
 
-    const pastWeekly = pastWeeks.map(w => semanal.filter(r => match(r) && r.semana === w.key).reduce((s,r) => s + Number(r.qty_total || 0), 0));
-    const pastAccReal = pastWeekly.reduce((s,v) => s+v, 0);
+    const pastWeekly = pastWeeks.map(w => ({
+      real: semanal.filter(r => match(r) && r.semana === w.key).reduce((s,r) => s + Number(r.qty_total || 0), 0),
+      plano: 0,
+    }));
+    const pastAccReal = pastWeekly.reduce((s,c) => s+c.real, 0);
 
-    const dailyCells = days.map(d => movs.filter(m => match(m) && m.data_registo === d.iso).reduce((s,m) => s + Number(m.quantidade || 0), 0));
-    const weekReal = dailyCells.reduce((s,v) => s+v, 0);
+    const dailyCells = days.map(d => ({
+      real: movs.filter(m => match(m) && m.data_registo === d.iso).reduce((s,m) => s + Number(m.quantidade || 0), 0),
+      plano: 0,
+    }));
+    const weekReal = dailyCells.reduce((s,c) => s+c.real, 0);
     const todayReal = movs.filter(m => match(m) && m.data_registo === dayIso).reduce((s,m) => s + Number(m.quantidade || 0), 0);
 
     return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan: 0, dailyCells, weekReal, weekPlan: 0, todayReal, todayPlan: 0 };
   });
 
-  const pastWeeklyTot = pastWeeks.map((_, i) => rows.reduce((s,r) => s + r.pastWeekly[i], 0));
-  const dailyTot = days.map((_, i) => rows.reduce((s,r) => s + r.dailyCells[i], 0));
+  const pastWeeklyTot = pastWeeks.map((_, i) => ({ real: rows.reduce((s,r) => s + r.pastWeekly[i].real, 0), plano: 0 }));
+  const dailyTot = days.map((_, i) => ({ real: rows.reduce((s,r) => s + r.dailyCells[i].real, 0), plano: 0 }));
   const pastAccRealTot = rows.reduce((s,r) => s + r.pastAccReal, 0);
   const weekRealTot = rows.reduce((s,r) => s + r.weekReal, 0);
   const todayRealTot = rows.reduce((s,r) => s + r.todayReal, 0);
@@ -293,6 +303,30 @@ function buildTable({
     if (noPlan || !plan) return `<td style="padding:10px;text-align:right;border-top:2px solid var(--color-blue)">—</td>`;
     const p = real / plan * 100;
     return `<td style="padding:10px;text-align:right;border-top:2px solid var(--color-blue);color:${pctColor(p)};${pctBg(p)}">${p.toFixed(0)}%</td>`;
+  };
+
+  // Value cell with per-cell coloring based on its own real/plan ratio
+  const valCell = (cell, extraStyle = '') => {
+    if (!cell) return `<td style="${tdStyle};${extraStyle};color:#6e6e73">—</td>`;
+    const real = cell.real || 0;
+    const plan = cell.plano || 0;
+    let bg = '';
+    if (!noPlan && plan) {
+      const p = real / plan * 100;
+      bg = pctBg(p);
+    }
+    return `<td style="${tdStyle};${extraStyle};${bg}">${fmt(real)}</td>`;
+  };
+  const valCellTot = (cell, extraStyle = '') => {
+    if (!cell) return `<td style="${tdStyleTot};${extraStyle};color:#6e6e73">—</td>`;
+    const real = cell.real || 0;
+    const plan = cell.plano || 0;
+    let bg = '';
+    if (!noPlan && plan) {
+      const p = real / plan * 100;
+      bg = pctBg(p);
+    }
+    return `<td style="${tdStyleTot};${extraStyle};${bg}">${fmt(real)}</td>`;
   };
 
   const thStyleData = 'text-align:right;padding:6px;border-bottom:2px solid #e0e0e0;font-size:.8rem;font-weight:600';
@@ -351,20 +385,20 @@ function buildTable({
             <td style="padding:8px;text-align:center;border-bottom:1px solid #f0f0f3">${r.linha.hc}</td>
 
             ${gap}
-            ${r.pastWeekly.map(v => `<td style="${tdStyle};color:#6e6e73">${fmt(v)}</td>`).join('')}
+            ${r.pastWeekly.map(c => valCell(c)).join('')}
             ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.pastAccPlan)}</td>`}
-            <td style="${tdStyle};background:#f7faff;font-weight:600">${fmt(r.pastAccReal)}</td>
+            ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:#f7faff;font-weight:600')}
             ${noPlan ? '' : pctCell(r.pastAccReal, r.pastAccPlan)}
 
             ${gap}
-            ${r.dailyCells.map((v,i) => `<td style="${tdStyle}${days[i].todayFlag ? ';background:#fffbe6' : ''}">${fmt(v)}</td>`).join('')}
+            ${r.dailyCells.map((c,i) => valCell(c, days[i].todayFlag ? 'background:#fffbe6' : '')).join('')}
             ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.weekPlan)}</td>`}
-            <td style="${tdStyle};background:#f7faff;font-weight:600">${fmt(r.weekReal)}</td>
+            ${valCell({ real: r.weekReal, plano: r.weekPlan }, 'background:#f7faff;font-weight:600')}
             ${noPlan ? '' : pctCell(r.weekReal, r.weekPlan)}
 
             ${gap}
             ${noPlan ? '' : `<td style="${tdStyle};background:#fff4e0">${fmtPlan(r.todayPlan)}</td>`}
-            <td style="${tdStyle};background:#fff4e0;font-weight:600">${fmt(r.todayReal)}</td>
+            ${valCell({ real: r.todayReal, plano: r.todayPlan }, 'background:#fff4e0;font-weight:600')}
             ${noPlan ? '' : pctCell(r.todayReal, r.todayPlan)}
           </tr>`).join('')}
           <tr style="background:#e3eeff;font-weight:700">
@@ -372,20 +406,20 @@ function buildTable({
             <td style="padding:10px;text-align:center;border-top:2px solid var(--color-blue)">${totalHC}</td>
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
-            ${pastWeeklyTot.map(v => `<td style="${tdStyleTot}">${fmt(v)}</td>`).join('')}
+            ${pastWeeklyTot.map(c => valCellTot(c)).join('')}
             ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(pastAccPlanTot)}</td>`}
-            <td style="${tdStyleTot}">${fmt(pastAccRealTot)}</td>
+            ${valCellTot({ real: pastAccRealTot, plano: pastAccPlanTot })}
             ${noPlan ? '' : pctCellTot(pastAccRealTot, pastAccPlanTot)}
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
-            ${dailyTot.map((v,i) => `<td style="${tdStyleTot}${days[i].todayFlag ? ';background:#fff3cd' : ''}">${fmt(v)}</td>`).join('')}
+            ${dailyTot.map((c,i) => valCellTot(c, days[i].todayFlag ? 'background:#fff3cd' : '')).join('')}
             ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(weekPlanTot)}</td>`}
-            <td style="${tdStyleTot}">${fmt(weekRealTot)}</td>
+            ${valCellTot({ real: weekRealTot, plano: weekPlanTot })}
             ${noPlan ? '' : pctCellTot(weekRealTot, weekPlanTot)}
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
             ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(todayPlanTot)}</td>`}
-            <td style="${tdStyleTot}">${fmt(todayRealTot)}</td>
+            ${valCellTot({ real: todayRealTot, plano: todayPlanTot })}
             ${noPlan ? '' : pctCellTot(todayRealTot, todayPlanTot)}
           </tr>
         </tbody>
