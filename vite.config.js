@@ -12,6 +12,10 @@ export default defineConfig({
       includeAssets: ['icon.svg'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,ico,png,woff2}'],
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        navigateFallback: null,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/hhrxxfnxacymwwwpvazk\.supabase\.co\/rest\/v1\/mp_standard.*/,
