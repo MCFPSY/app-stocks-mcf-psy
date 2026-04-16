@@ -211,44 +211,72 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
   const linhas = linhasRes.data;
   const semanal = semanalRes.data || [];
   const movs = movRes.data || [];
-  const bmMap = new Map((bmRes.data || []).map(b => [`${b.produto_stock}|${b.tipo_linha}`, Number(b.target_m3_malote)]));
 
-  // Aggregate past weeks: linha -> weekKey -> { m3, plano, produtos(Set) }
-  // plano = sum of benchmark per DISTINCT product produced (not × malotes)
+  // Build benchmark structures:
+  // - fixedPerLinha: linha -> target (when produto_stock IS NULL, applies to all products)
+  // - perProduto: "linha|produto" -> target (specific target for product on linha)
+  const fixedPerLinha = new Map();
+  const perProduto = new Map();
+  for (const b of (bmRes.data || [])) {
+    if (b.produto_stock === null || b.produto_stock === '') {
+      fixedPerLinha.set(b.linha, Number(b.target_m3));
+    } else {
+      perProduto.set(`${b.linha}|${b.produto_stock}`, Number(b.target_m3));
+    }
+  }
+
+  // Helper: compute plano for a given (linha, set of products produced)
+  // - If linha has fixed target → return fixed value (ignores product count)
+  // - Else → sum per-product targets (each distinct product counted once)
+  function planoFor(linhaName, produtosSet) {
+    if (fixedPerLinha.has(linhaName)) return fixedPerLinha.get(linhaName);
+    let s = 0;
+    for (const p of produtosSet) {
+      const t = perProduto.get(`${linhaName}|${p}`);
+      if (t) s += t;
+    }
+    return s;
+  }
+
+  // Aggregate past weeks: linha -> weekKey -> { m3, produtos(Set) }
   const weekly = new Map();
   for (const l of linhas) weekly.set(l.nome, {});
   for (const r of semanal) {
     if (!pastWeeks.find(w => w.key === r.semana)) continue;
     const linha = linhas.find(l => l.nome === r.linha); if (!linha) continue;
     const buck = weekly.get(linha.nome);
-    if (!buck[r.semana]) buck[r.semana] = { m3: 0, plano: 0, produtos: new Set() };
+    if (!buck[r.semana]) buck[r.semana] = { m3: 0, produtos: new Set() };
     buck[r.semana].m3 += Number(r.m3_total || 0);
-    if (!buck[r.semana].produtos.has(r.produto_stock)) {
-      buck[r.semana].produtos.add(r.produto_stock);
-      const bm = bmMap.get(`${r.produto_stock}|${linha.tipo_benchmark}`);
-      buck[r.semana].plano += bm || 0;
+    buck[r.semana].produtos.add(r.produto_stock);
+  }
+  // Compute plano per (linha, week) after aggregation
+  for (const [linhaName, buck] of weekly) {
+    for (const wk of Object.keys(buck)) {
+      buck[wk].plano = planoFor(linhaName, buck[wk].produtos);
     }
   }
 
   // Sort movs by criado_em ascending (to capture first product of day)
   const movsSorted = [...movs].sort((a, b) => (a.criado_em || '').localeCompare(b.criado_em || ''));
 
-  // Aggregate current week by day: linha -> dayIso -> { m3, plano, produtos, firstProduto }
+  // Aggregate current week by day: linha -> dayIso -> { m3, produtos, firstProduto, desvios }
   const byDay = new Map();
   for (const l of linhas) byDay.set(l.nome, {});
   for (const m of movsSorted) {
     const linha = linhas.find(l => l.nome === m.linha); if (!linha) continue;
     const d = m.data_registo || m.criado_em.slice(0,10);
     const buck = byDay.get(linha.nome);
-    if (!buck[d]) buck[d] = { m3: 0, plano: 0, produtos: new Set(), firstProduto: m.produto_stock, desvios: [] };
+    if (!buck[d]) buck[d] = { m3: 0, produtos: new Set(), firstProduto: m.produto_stock, desvios: [] };
     buck[d].m3 += Number(m.m3 || 0);
-    if (!buck[d].produtos.has(m.produto_stock)) {
-      buck[d].produtos.add(m.produto_stock);
-      const bm = bmMap.get(`${m.produto_stock}|${linha.tipo_benchmark}`);
-      buck[d].plano += bm || 0;
-    }
+    buck[d].produtos.add(m.produto_stock);
     if (m.desvio_objetivo && m.desvio_objetivo.trim()) {
       buck[d].desvios.push(m.desvio_objetivo.trim());
+    }
+  }
+  // Compute plano per (linha, day) after aggregation
+  for (const [linhaName, buck] of byDay) {
+    for (const dayIso2 of Object.keys(buck)) {
+      buck[dayIso2].plano = planoFor(linhaName, buck[dayIso2].produtos);
     }
   }
 
