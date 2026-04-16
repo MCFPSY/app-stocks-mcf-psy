@@ -1,6 +1,8 @@
 import { supabase } from '../../supabase.js';
 
 let currentEmpresa = 'mcf';
+let editMode = false;
+let currentCtx = null;
 
 // ========================================================
 // ISO week helpers
@@ -62,12 +64,17 @@ function pctBg(p) {
 // Main entry
 // ========================================================
 export async function renderMain(el, ctx) {
+  currentCtx = ctx;
   const today = new Date();
   const now = isoWeek(today);
+  const isAdmin = ctx.profile?.perfil === 'admin' || ctx.profile?.perfil === 'admin_producao';
 
   el.innerHTML = `
     <div class="card">
-      <h2>📈 Dashboard — Controlo de Produção</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">📈 Dashboard — Controlo de Produção</h2>
+        ${isAdmin ? `<button type="button" id="editModeBtn" class="btn ${editMode ? 'btn-success' : 'btn-secondary'}" style="padding:8px 14px;font-size:.85rem">${editMode ? '✓ Sair do modo edição' : '✏️ Modo edição'}</button>` : ''}
+      </div>
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
         <div class="field" style="min-width:180px">
           <label>Semana de referência</label>
@@ -101,6 +108,12 @@ export async function renderMain(el, ctx) {
   el.querySelector('#weekPicker').addEventListener('change', load);
   el.querySelector('#dayPicker').addEventListener('change', load);
 
+  const editBtn = el.querySelector('#editModeBtn');
+  if (editBtn) editBtn.addEventListener('click', () => {
+    editMode = !editMode;
+    renderMain(el, ctx); // full re-render to update button text
+  });
+
   async function load() {
     const picker = el.querySelector('#weekPicker').value;
     const dayIso = el.querySelector('#dayPicker').value;
@@ -115,6 +128,33 @@ export async function renderMain(el, ctx) {
 
     if (currentEmpresa === 'mcf') await renderMCF(content, pastWeeks, currentWeek, days, dayIso);
     else await renderPSY(content, pastWeeks, currentWeek, days, dayIso);
+
+    // Re-bind after re-render
+    const toggleBtn = content.querySelector('#togglePastBtn');
+    if (toggleBtn) toggleBtn.addEventListener('click', () => { pastCollapsed = !pastCollapsed; load(); });
+
+    // HC edit persistence
+    content.querySelectorAll('[data-hc-linha]').forEach(input => {
+      input.addEventListener('change', async () => {
+        const linha = input.dataset.hcLinha;
+        const empresa = input.dataset.hcEmpresa;
+        const hc = parseInt(input.value) || 0;
+        const table = empresa === 'mcf' ? 'mcf_linhas' : 'psy_linhas';
+        const { error } = await supabase.from(table).update({ hc }).eq('nome', linha);
+        if (error) alert('Erro a gravar HC: ' + error.message);
+      });
+    });
+
+    // Paragens persistence (localStorage)
+    content.querySelectorAll('[data-paragem-idx]').forEach(input => {
+      input.addEventListener('change', () => {
+        const key = input.dataset.paragemKey;
+        const idx = parseInt(input.dataset.paragemIdx);
+        const arr = JSON.parse(localStorage.getItem(key) || '["","",""]');
+        arr[idx] = input.value.trim();
+        localStorage.setItem(key, JSON.stringify(arr));
+      });
+    });
   }
 
   load();
@@ -162,14 +202,17 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     }
   }
 
-  // Aggregate current week by day: linha -> dayIso -> { m3, plano, produtos }
+  // Sort movs by criado_em ascending (to capture first product of day)
+  const movsSorted = [...movs].sort((a, b) => (a.criado_em || '').localeCompare(b.criado_em || ''));
+
+  // Aggregate current week by day: linha -> dayIso -> { m3, plano, produtos, firstProduto }
   const byDay = new Map();
   for (const l of linhas) byDay.set(l.nome, {});
-  for (const m of movs) {
+  for (const m of movsSorted) {
     const linha = linhas.find(l => l.nome === m.linha); if (!linha) continue;
     const d = m.data_registo || m.criado_em.slice(0,10);
     const buck = byDay.get(linha.nome);
-    if (!buck[d]) buck[d] = { m3: 0, plano: 0, produtos: new Set() };
+    if (!buck[d]) buck[d] = { m3: 0, plano: 0, produtos: new Set(), firstProduto: m.produto_stock };
     buck[d].m3 += Number(m.m3 || 0);
     if (!buck[d].produtos.has(m.produto_stock)) {
       buck[d].produtos.add(m.produto_stock);
@@ -192,12 +235,13 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
 
     const todayReal = (dayBuck[dayIso]?.m3) || 0;
     const todayPlan = (dayBuck[dayIso]?.plano) || 0;
+    const todayProduto = (dayBuck[dayIso]?.firstProduto) || '';
 
     return {
       linha: l,
       pastWeekly, pastAccReal, pastAccPlan,
       dailyCells, weekReal, weekPlan,
-      todayReal, todayPlan,
+      todayReal, todayPlan, todayProduto,
     };
   });
 
@@ -248,7 +292,9 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
     { linha:'Linha 04', turno:null, hc:1 }, { linha:'Linha 05', turno:null, hc:0 },
     { linha:'Linha 06', turno:null, hc:1 }, { linha:'Linha 07', turno:'T1', hc:2 },
     { linha:'Linha 08', turno:'T1', hc:2 }, { linha:'Linha 08', turno:'T2', hc:3 },
+    { linha:'Tampos',   turno:null, hc:2 },
     { linha:'Bancadas', turno:null, hc:4 },
+    { linha:'Robot',    turno:'T1', hc:1 }, { linha:'Robot', turno:'T2', hc:1 },
   ];
 
   const semanal = semanalRes.data || [];
@@ -269,9 +315,11 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
       plano: 0,
     }));
     const weekReal = dailyCells.reduce((s,c) => s+c.real, 0);
-    const todayReal = movs.filter(m => match(m) && m.data_registo === dayIso).reduce((s,m) => s + Number(m.quantidade || 0), 0);
+    const todayMovs = movs.filter(m => match(m) && m.data_registo === dayIso);
+    const todayReal = todayMovs.reduce((s,m) => s + Number(m.quantidade || 0), 0);
+    const todayProduto = todayMovs[0]?.produto || '';
 
-    return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan: 0, dailyCells, weekReal, weekPlan: 0, todayReal, todayPlan: 0 };
+    return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan: 0, dailyCells, weekReal, weekPlan: 0, todayReal, todayPlan: 0, todayProduto };
   });
 
   const pastWeeklyTot = pastWeeks.map((_, i) => ({ real: rows.reduce((s,r) => s + r.pastWeekly[i].real, 0), plano: 0 }));
@@ -292,6 +340,9 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
 // ========================================================
 // Shared table builder — 3 blocks side by side
 // ========================================================
+// Global state for dashboard UI
+let pastCollapsed = false;
+
 function buildTable({
   rows, pastWeeks, days, dayIso,
   pastWeeklyTot, dailyTot,
@@ -299,6 +350,9 @@ function buildTable({
   totalHC, totalLabel, unit, fmt, fmtPlan, noPlan,
 }) {
   const todayLabel = new Date(dayIso + 'T00:00:00Z').toLocaleDateString('pt-PT');
+  // Top 3 paragens from localStorage (per empresa) — future: move to DB
+  const paragensKey = 'mcfpsy-top3-paragens-' + (totalLabel.includes('MCF') ? 'mcf' : 'psy');
+  const paragens = JSON.parse(localStorage.getItem(paragensKey) || '["","",""]');
 
   const pctCell = (real, plan) => {
     if (noPlan || !plan) return `<td style="padding:8px;text-align:right;border-bottom:1px solid #f0f0f3;color:#6e6e73">—</td>`;
@@ -344,31 +398,40 @@ function buildTable({
   // Block 2: Days of current week (7 cols) + Total plano + Total real + %
   // Block 3: Today (Plano + Real + %)
 
-  const block1Cols = pastWeeks.length + (noPlan ? 1 : 3); // past weekly + accReal (+ accPlan + %)
+  // If block 1 collapsed, show only summary (no weekly detail)
+  const block1CollapsedCols = noPlan ? 1 : 3; // only acc totals
+  const block1FullCols = pastWeeks.length + (noPlan ? 1 : 3);
+  const block1Cols = pastCollapsed ? block1CollapsedCols : block1FullCols;
   const block2Cols = days.length + (noPlan ? 1 : 3);
   const block3Cols = noPlan ? 1 : 3;
+  const block4Cols = 1; // Produto
+  const block5Cols = 1; // Top 3 paragens (spans 3 rows visually)
 
   const gap = `<td style="padding:0;width:18px;background:#fff;border-bottom:none" class="gap-col"></td>`;
   const gapHeadRow2 = `<th style="padding:0;width:18px;background:#fff;border-bottom:none"></th>`;
   const gapHeadTop = `<th style="padding:0;width:18px;background:#fff;border-bottom:none;border-top:none"></th>`;
 
+  const collapseBtn = `<button type="button" id="togglePastBtn" style="background:transparent;border:none;color:#fff;cursor:pointer;font-size:.75rem;padding:2px 8px;border-radius:4px">${pastCollapsed ? '▸ expandir' : '▾ minimizar'}</button>`;
+
   return `
     <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;min-width:1400px;font-size:.85rem">
+      <table style="width:100%;border-collapse:collapse;min-width:${pastCollapsed ? 1100 : 1500}px;font-size:.85rem">
         <thead>
           <tr>
             <th rowspan="3" style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7;position:sticky;left:0;z-index:2">Linha</th>
             <th rowspan="3" style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7">HC</th>
             ${gapHeadTop}
-            <th colspan="${block1Cols}" style="${thStyleGroup}background:#6c757d">Acumulado últimas ${pastWeeks.length} semanas</th>
+            <th colspan="${block1Cols}" style="${thStyleGroup}background:#6c757d">Últimas ${pastWeeks.length} semanas ${collapseBtn}</th>
             ${gapHeadTop}
             <th colspan="${block2Cols}" style="${thStyleGroup}background:#007AFF">Semana atual</th>
             ${gapHeadTop}
             <th colspan="${block3Cols}" style="${thStyleGroup}background:#f57f17">Hoje (${todayLabel})</th>
+            ${gapHeadTop}
+            <th colspan="${block4Cols}" style="${thStyleGroup}background:#34C759">Produto</th>
           </tr>
           <tr style="background:#f5f5f7">
             ${gapHeadRow2}
-            ${pastWeeks.map(w => `<th style="${thStyleData}color:#6e6e73">${w.label}</th>`).join('')}
+            ${pastCollapsed ? '' : pastWeeks.map(w => `<th style="${thStyleData}color:#6e6e73">${w.label}</th>`).join('')}
             ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">Plano</th>`}
             <th style="${thStyleData}background:#eef3fc">Real</th>
             ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">%</th>`}
@@ -383,15 +446,22 @@ function buildTable({
             ${noPlan ? '' : `<th style="${thStyleData}background:#fff4e0">Plano</th>`}
             <th style="${thStyleData}background:#fff4e0">Real</th>
             ${noPlan ? '' : `<th style="${thStyleData}background:#fff4e0">%</th>`}
+
+            ${gapHeadRow2}
+            <th style="${thStyleData}background:#e8f5e9;text-align:left">Produto hoje</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(r => `<tr>
             <td style="padding:8px;border-bottom:1px solid #f0f0f3;position:sticky;left:0;background:#fff;z-index:1">${r.linha.nome}</td>
-            <td style="padding:8px;text-align:center;border-bottom:1px solid #f0f0f3">${r.linha.hc}</td>
+            <td style="padding:8px;text-align:center;border-bottom:1px solid #f0f0f3">
+              ${editMode
+                ? `<input type="number" min="0" value="${r.linha.hc || 0}" data-hc-linha="${r.linha.nome}" data-hc-empresa="${totalLabel.includes('MCF') ? 'mcf' : 'psy'}" style="width:50px;padding:4px;border:1px solid var(--color-blue);border-radius:4px;text-align:center;font-weight:600">`
+                : (r.linha.hc || 0)}
+            </td>
 
             ${gap}
-            ${r.pastWeekly.map(c => valCell(c)).join('')}
+            ${pastCollapsed ? '' : r.pastWeekly.map(c => valCell(c)).join('')}
             ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.pastAccPlan)}</td>`}
             ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:#f7faff;font-weight:600')}
             ${noPlan ? '' : pctCell(r.pastAccReal, r.pastAccPlan)}
@@ -406,13 +476,16 @@ function buildTable({
             ${noPlan ? '' : `<td style="${tdStyle};background:#fff4e0">${fmtPlan(r.todayPlan)}</td>`}
             ${valCell({ real: r.todayReal, plano: r.todayPlan }, 'background:#fff4e0;font-weight:600')}
             ${noPlan ? '' : pctCell(r.todayReal, r.todayPlan)}
+
+            ${gap}
+            <td style="${tdStyle};text-align:left;background:#f1f8e9;font-size:.8rem;color:#33691e">${r.todayProduto || '—'}</td>
           </tr>`).join('')}
           <tr style="background:#e3eeff;font-weight:700">
             <td style="padding:10px;border-top:2px solid var(--color-blue);position:sticky;left:0;background:#e3eeff;z-index:1">${totalLabel}</td>
             <td style="padding:10px;text-align:center;border-top:2px solid var(--color-blue)">${totalHC}</td>
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
-            ${pastWeeklyTot.map(c => valCellTot(c)).join('')}
+            ${pastCollapsed ? '' : pastWeeklyTot.map(c => valCellTot(c)).join('')}
             ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(pastAccPlanTot)}</td>`}
             ${valCellTot({ real: pastAccRealTot, plano: pastAccPlanTot })}
             ${noPlan ? '' : pctCellTot(pastAccRealTot, pastAccPlanTot)}
@@ -427,10 +500,28 @@ function buildTable({
             ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(todayPlanTot)}</td>`}
             ${valCellTot({ real: todayRealTot, plano: todayPlanTot })}
             ${noPlan ? '' : pctCellTot(todayRealTot, todayPlanTot)}
+
+            <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
+            <td style="${tdStyleTot}"></td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="sub" style="margin-top:12px">Unidade: ${unit}. Cinza = últimas semanas · Azul = semana atual · Laranja = hoje. "—" sem dados/benchmark.</p>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:16px">
+      <p class="sub" style="margin:0">Unidade: ${unit}. Cinza = últimas semanas · Azul = semana atual · Laranja = hoje. "—" sem dados/benchmark.</p>
+      <div style="background:#fff;border:2px solid #f57f17;border-radius:12px;padding:14px">
+        <h3 style="font-size:.95rem;margin-bottom:10px;color:#f57f17">🚨 Top 3 causas paragens</h3>
+        <div id="top3Paragens">
+          ${[0,1,2].map(i => `
+            <div style="padding:8px 10px;border-left:3px solid #f57f17;background:#fff8e1;margin-bottom:6px;font-size:.85rem">
+              ${editMode
+                ? `<input type="text" value="${(paragens[i] || '').replace(/"/g,'&quot;')}" data-paragem-idx="${i}" data-paragem-key="${paragensKey}" placeholder="Causa ${i+1}..." style="width:100%;padding:4px 6px;border:1px solid #f57f17;border-radius:4px;font-size:.85rem;background:#fff">`
+                : `<span>${paragens[i] || '—'}</span>`}
+            </div>
+          `).join('')}
+        </div>
+        <p class="sub" style="margin-top:8px;font-size:.75rem">${editMode ? 'Escreve e sai do campo para gravar.' : 'Editável apenas em modo edição (admin).'}</p>
+      </div>
+    </div>
   `;
 }

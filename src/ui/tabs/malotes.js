@@ -94,6 +94,10 @@ export async function renderMalotes(el, ctx) {
             <label>Incerteza no produto?</label>
             <select class="big" id="incerteza"><option value="false">Não</option><option value="true">Sim — enviar para Dúvidas</option></select>
           </div>
+          <div class="field" style="grid-column:1/-1">
+            <label>Desvio ao objetivo (opcional)</label>
+            <textarea id="desvioObj" rows="2" placeholder="Explica motivos de eventual desvio ao objetivo (paragens, avarias, falta de material, etc.)..." style="font-family:inherit;font-size:.95rem;padding:12px 14px;border:2px solid var(--color-border);border-radius:12px;resize:vertical"></textarea>
+          </div>
           <div class="field" id="obsField" style="display:none;grid-column:1/-1">
             <label>Observações da dúvida</label>
             <textarea id="observacoes" rows="3" placeholder="Descreve a dúvida ou observações..." style="font-family:inherit;font-size:1rem;padding:14px 16px;border:2px solid var(--color-border);border-radius:12px;resize:vertical"></textarea>
@@ -208,6 +212,7 @@ export async function renderMalotes(el, ctx) {
       linha,
       turno,
       ...(obs ? { justificacao: obs } : {}),
+      ...(($('desvioObj').value || '').trim() ? { desvio_objetivo: $('desvioObj').value.trim() } : {}),
     });
     subBtn.disabled = false; subBtn.textContent = '✓ Registar entrada';
     toast(res.offline ? '📤 Guardado offline — sincroniza quando houver rede' : '✓ Entrada registada','success');

@@ -80,6 +80,11 @@ export async function renderPSY(el, ctx) {
           <div><b id="cartTotal">0</b> modelo(s) · <b id="cartQtyTotal">0</b> unidades total</div>
         </div>
 
+        <div class="field" style="margin-top:16px">
+          <label>Desvio ao objetivo (opcional)</label>
+          <textarea id="desvioObj" rows="2" placeholder="Explica motivos de eventual desvio ao objetivo (paragens, avarias, etc.)..." style="font-family:inherit;font-size:.95rem;padding:12px 14px;border:2px solid var(--color-border);border-radius:12px;resize:vertical;width:100%"></textarea>
+        </div>
+
         <div class="btn-row" style="margin-top:16px">
           <button type="button" class="btn btn-secondary btn-big" id="clearAllBtn">Limpar tudo</button>
           <button type="button" class="btn btn-success btn-big" id="submitAllBtn">✓ Registar tudo</button>
@@ -197,6 +202,7 @@ export async function renderPSY(el, ctx) {
       produto: it.produto,
       quantidade: it.quantidade,
       operador_id: ctx.profile.id,
+      ...(($('desvioObj')?.value || '').trim() ? { desvio_objetivo: $('desvioObj').value.trim() } : {}),
     }));
 
     const { error } = await supabase.from('psy_producao').insert(rows);

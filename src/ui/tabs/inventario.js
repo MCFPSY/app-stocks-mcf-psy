@@ -38,12 +38,21 @@ export async function renderInventario(el, ctx) {
 
 // ====== MADEIRA SERRADA (existing logic) ======
 async function renderMadeira(el) {
-  const { data, error } = await supabase.from('v_stock').select('*').order('produto_stock');
-  if (error) { el.innerHTML = `<p class="sub">Erro: ${error.message}</p>`; return; }
+  const [stockRes, mpRes] = await Promise.all([
+    supabase.from('v_stock').select('*').order('produto_stock'),
+    supabase.from('mp_standard').select('produto_stock, categoria').eq('ativo', true),
+  ]);
+  if (stockRes.error) { el.innerHTML = `<p class="sub">Erro: ${stockRes.error.message}</p>`; return; }
+  const data = stockRes.data;
+  // Build produto -> categoria lookup
+  const catMap = new Map();
+  for (const p of (mpRes.data || [])) {
+    if (!catMap.has(p.produto_stock)) catMap.set(p.produto_stock, p.categoria);
+  }
 
   const map = new Map();
   for (const r of data) {
-    if (!map.has(r.produto_stock)) map.set(r.produto_stock, { produto: r.produto_stock, MCF: 0, PSY: 0, m3: 0 });
+    if (!map.has(r.produto_stock)) map.set(r.produto_stock, { produto: r.produto_stock, MCF: 0, PSY: 0, m3: 0, categoria: catMap.get(r.produto_stock) || 'outros' });
     const o = map.get(r.produto_stock);
     o[r.empresa] = Number(r.malotes || 0);
     o.m3 += Number(r.m3 || 0);
@@ -72,6 +81,15 @@ async function renderMadeira(el) {
           <option value="PSY">PSY</option>
         </select>
       </div>
+      <div class="field" style="min-width:180px">
+        <label>Categoria</label>
+        <select id="filterCategoria" style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem">
+          <option value="all">Todos</option>
+          <option value="tabuas">Tábuas</option>
+          <option value="barrotes">Barrotes</option>
+          <option value="outros">Outros</option>
+        </select>
+      </div>
     </div>
     <table style="width:100%;border-collapse:collapse">
       <thead><tr>
@@ -86,6 +104,7 @@ async function renderMadeira(el) {
 
   const searchInput = el.querySelector('#searchProd');
   const filterEmpresa = el.querySelector('#filterEmpresa');
+  const filterCategoria = el.querySelector('#filterCategoria');
   const tbody = el.querySelector('#invBody');
   const colMCF = el.querySelector('#colMCF');
   const colPSY = el.querySelector('#colPSY');
@@ -96,10 +115,12 @@ async function renderMadeira(el) {
   function renderTable() {
     const query = searchInput.value.trim().toLowerCase();
     const emp = filterEmpresa.value;
+    const cat = filterCategoria.value;
     const filtered = allRows.filter(r => {
       if (query && !r.produto.toLowerCase().includes(query)) return false;
       if (emp === 'MCF' && !r.MCF) return false;
       if (emp === 'PSY' && !r.PSY) return false;
+      if (cat !== 'all' && r.categoria !== cat) return false;
       return true;
     });
     const fMal = filtered.reduce((s, r) => {
@@ -137,6 +158,7 @@ async function renderMadeira(el) {
 
   searchInput.addEventListener('input', renderTable);
   filterEmpresa.addEventListener('change', renderTable);
+  filterCategoria.addEventListener('change', renderTable);
   renderTable();
 }
 

@@ -1,6 +1,7 @@
 import { supabase, getProfile } from './supabase.js';
 import { renderLogin } from './ui/login.js';
 import { renderApp } from './ui/app.js';
+import { loadCustomPerms } from './permissions.js';
 import './offline.js';
 import './styles.css';
 // PWA registration handled by vite-plugin-pwa (only in production build)
@@ -31,6 +32,7 @@ async function bootstrap() {
       root.innerHTML = '<div style="padding:40px;text-align:center">Sem perfil associado. Contacta o admin.</div>';
       return;
     }
+    await loadCustomPerms(profile.id);
     renderApp(root, profile);
   } finally {
     bootstrapping = false;
