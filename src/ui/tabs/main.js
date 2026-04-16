@@ -455,38 +455,38 @@ function buildTable({
             ${gapHeadTop}
             <th colspan="${block1Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">${pastCollapsed ? collapseBtn : `Últimas ${pastWeeks.length} semanas ${collapseBtn}`}</th>
             ${gapHeadTop}
-            <th colspan="${block2Cols}" style="${thStyleGroup}background:rgba(0,122,255,0.15)">Semana atual</th>
+            <th colspan="${block2Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">Semana atual</th>
             ${gapHeadTop}
-            <th colspan="${block3Cols}" style="${thStyleGroup}background:rgba(245,127,23,0.15)">Hoje (${todayLabel})</th>
+            <th colspan="${block3Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">Hoje (${todayLabel})</th>
             ${gapHeadTop}
-            <th colspan="${block4Cols}" style="${thStyleGroup}background:rgba(52,199,89,0.15)">Produto</th>
+            <th colspan="${block4Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">Produto</th>
             ${gapHeadTop}
-            <th colspan="${block5Cols}" style="${thStyleGroup}background:rgba(211,47,47,0.15)">Causas raíz</th>
+            <th colspan="${block5Cols}" style="${thStyleGroup}background:rgba(245,127,23,0.15)">Causas raíz</th>
           </tr>
           <tr style="background:#f5f5f7">
             ${gapHeadRow2}
             ${pastCollapsed ? `<th style="${thStyleData};background:#f5f5f7">&nbsp;</th>` : `
               ${pastWeeks.map(w => `<th style="${thStyleData}color:#6e6e73">${w.label}</th>`).join('')}
-              ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">Plano</th>`}
-              <th style="${thStyleData}background:rgba(0,122,255,0.06)">Real</th>
-              ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">%</th>`}
+              ${noPlan ? '' : `<th style="${thStyleData}background:transparent">Plano</th>`}
+              <th style="${thStyleData}background:transparent">Real</th>
+              ${noPlan ? '' : `<th style="${thStyleData}background:transparent">%</th>`}
             `}
 
             ${gapHeadRow2}
             ${days.map(d => `<th style="${thStyleData}${d.todayFlag ? ';background:#fff3cd;color:#856404' : ''}">${d.label}<div style="font-size:.65rem;color:#6e6e73;font-weight:400">${d.dayNum}</div></th>`).join('')}
-            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">Plano</th>`}
-            <th style="${thStyleData}background:rgba(0,122,255,0.06)">Real</th>
-            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">%</th>`}
+            ${noPlan ? '' : `<th style="${thStyleData}background:transparent">Plano</th>`}
+            <th style="${thStyleData}background:transparent">Real</th>
+            ${noPlan ? '' : `<th style="${thStyleData}background:transparent">%</th>`}
 
             ${gapHeadRow2}
-            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(245,127,23,0.08)">Plano</th>`}
-            <th style="${thStyleData}background:rgba(245,127,23,0.08)">Real</th>
-            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(245,127,23,0.08)">%</th>`}
+            ${noPlan ? '' : `<th style="${thStyleData}background:transparent">Plano</th>`}
+            <th style="${thStyleData}background:transparent">Real</th>
+            ${noPlan ? '' : `<th style="${thStyleData}background:transparent">%</th>`}
 
             ${gapHeadRow2}
             <th style="${thStyleData}background:#e8f5e9;text-align:left">Produto</th>
             ${gapHeadRow2}
-            <th style="${thStyleData}background:rgba(211,47,47,0.06);text-align:left">Desvio</th>
+            <th style="${thStyleData}background:rgba(245,127,23,0.06);text-align:left">Desvio</th>
           </tr>
         </thead>
         <tbody>
@@ -501,26 +501,26 @@ function buildTable({
             ${gap}
             ${pastCollapsed ? `<td style="${tdStyle};background:#f5f5f7;text-align:center;color:#adb5bd">···</td>` : `
               ${r.pastWeekly.map(c => valCell(c)).join('')}
-              ${noPlan ? '' : `<td style="${tdStyle};background:rgba(0,122,255,0.04)">${fmtPlan(r.pastAccPlan)}</td>`}
-              ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:rgba(0,122,255,0.04);font-weight:600')}
+              ${noPlan ? '' : `<td style="${tdStyle};background:transparent">${fmtPlan(r.pastAccPlan)}</td>`}
+              ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:transparent;font-weight:600')}
               ${noPlan ? '' : pctCell(r.pastAccReal, r.pastAccPlan)}
             `}
 
             ${gap}
             ${r.dailyCells.map((c,i) => valCell(c)).join('')}
-            ${noPlan ? '' : `<td style="${tdStyle};background:rgba(0,122,255,0.04)">${fmtPlan(r.weekPlan)}</td>`}
-            ${valCell({ real: r.weekReal, plano: r.weekPlan }, 'background:rgba(0,122,255,0.04);font-weight:600')}
+            ${noPlan ? '' : `<td style="${tdStyle};background:transparent">${fmtPlan(r.weekPlan)}</td>`}
+            ${valCell({ real: r.weekReal, plano: r.weekPlan }, 'background:transparent;font-weight:600')}
             ${noPlan ? '' : pctCell(r.weekReal, r.weekPlan)}
 
             ${gap}
-            ${noPlan ? '' : `<td style="${tdStyle};background:rgba(245,127,23,0.08)">${fmtPlan(r.todayPlan)}</td>`}
-            ${valCell({ real: r.todayReal, plano: r.todayPlan }, 'background:rgba(245,127,23,0.08);font-weight:600')}
+            ${noPlan ? '' : `<td style="${tdStyle};background:transparent">${fmtPlan(r.todayPlan)}</td>`}
+            ${valCell({ real: r.todayReal, plano: r.todayPlan }, 'background:transparent;font-weight:600')}
             ${noPlan ? '' : pctCell(r.todayReal, r.todayPlan)}
 
             ${gap}
-            <td style="${tdStyle};text-align:left;background:rgba(52,199,89,0.08);font-size:.8rem;color:#33691e">${r.todayProduto || '—'}</td>
+            <td style="${tdStyle};text-align:left;font-size:.8rem;color:#495057">${r.todayProduto || '—'}</td>
             ${gap}
-            <td style="${tdStyle};text-align:left;background:rgba(211,47,47,0.06);font-size:.78rem;color:#b71c1c;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
+            <td style="${tdStyle};text-align:left;font-size:.78rem;color:#e65100;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
           </tr>`).join('')}
           <tr style="background:#e3eeff;font-weight:700">
             <td style="padding:10px;border-top:2px solid var(--color-blue);position:sticky;left:0;background:#e3eeff;z-index:1">${totalLabel}</td>
