@@ -299,7 +299,7 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     rows, pastWeeks, days, dayIso,
     pastWeeklyTot, dailyTot,
     pastAccRealTot, pastAccPlanTot, weekRealTot, weekPlanTot, todayRealTot, todayPlanTot,
-    totalHC, totalLabel: 'Total MCF', unit: 'm³', fmt: v => v ? v.toFixed(1) : '—', fmtPlan: v => v ? v.toFixed(0) : '—',
+    totalHC, totalLabel: 'Total MCF', unit: 'm³', fmt: v => v ? v.toFixed(1) : '-', fmtPlan: v => v ? v.toFixed(0) : '-',
   });
 }
 
@@ -366,7 +366,7 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
     rows, pastWeeks, days, dayIso,
     pastWeeklyTot, dailyTot,
     pastAccRealTot, pastAccPlanTot: 0, weekRealTot, weekPlanTot: 0, todayRealTot, todayPlanTot: 0,
-    totalHC, totalLabel: 'Total PSY', unit: 'paletes', fmt: v => v ? v.toLocaleString('pt-PT') : '—', fmtPlan: () => '—', noPlan: true,
+    totalHC, totalLabel: 'Total PSY', unit: 'paletes', fmt: v => v ? v.toLocaleString('pt-PT') : '-', fmtPlan: () => '-', noPlan: true,
   });
 }
 
@@ -410,10 +410,10 @@ function buildTable({
     return `<td style="${tdStyleTot};${extraStyle}">${fmt(real)}</td>`;
   };
 
-  const thStyleData = 'text-align:right;padding:6px;border-bottom:2px solid #e0e0e0;font-size:.8rem;font-weight:600';
+  const thStyleData = 'text-align:center;padding:6px;border-bottom:2px solid #e0e0e0;font-size:.8rem;font-weight:600';
   const thStyleGroup = 'text-align:center;padding:6px;border-bottom:1px solid #e0e0e0;font-size:.75rem;color:#495057;font-weight:600;';
-  const tdStyle = 'padding:8px;text-align:right;border-bottom:1px solid #f0f0f3;font-size:.85rem';
-  const tdStyleTot = 'padding:10px;text-align:right;border-top:2px solid rgba(0,122,255,0.3);font-size:.9rem';
+  const tdStyle = 'padding:8px;text-align:center;border-bottom:1px solid #f0f0f3;font-size:.85rem';
+  const tdStyleTot = 'padding:10px;text-align:center;border-top:2px solid rgba(0,122,255,0.3);font-size:.9rem';
 
   // Block 1: Past weeks (7 cols) + Acumulado (Plano, Real, %)
   // Block 2: Days of current week (7 cols) + Total plano + Total real + %
@@ -430,7 +430,7 @@ function buildTable({
   const gapHeadRow2 = `<th style="padding:0;width:18px;background:#fff;border-bottom:none"></th>`;
   const gapHeadTop = `<th style="padding:0;width:18px;background:#fff;border-bottom:none;border-top:none"></th>`;
 
-  const collapseBtn = `<button type="button" id="togglePastBtn" style="background:rgba(255,255,255,0.25);border:none;color:#fff;cursor:pointer;font-size:1rem;padding:0;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700" title="${pastCollapsed ? 'Expandir últimas semanas' : 'Minimizar'}">${pastCollapsed ? '+' : '−'}</button>`;
+  const collapseBtn = `<button type="button" id="togglePastBtn" style="background:#6c757d;border:none;color:#fff;cursor:pointer;font-size:1rem;padding:0;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700" title="${pastCollapsed ? 'Expandir últimas semanas' : 'Minimizar'}">${pastCollapsed ? '+' : '−'}</button>`;
 
   return `
     <div style="display:flex;gap:16px;align-items:flex-start">
@@ -449,7 +449,7 @@ function buildTable({
             ${gapHeadTop}
             <th colspan="${block4Cols}" style="${thStyleGroup}background:transparent">Produto</th>
             ${gapHeadTop}
-            <th colspan="${block5Cols}" style="${thStyleGroup}background:rgba(245,127,23,0.15)">Causas raíz</th>
+            <th colspan="${block5Cols}" style="${thStyleGroup}background:transparent">Causas raíz</th>
           </tr>
           <tr style="background:#f5f5f7">
             ${gapHeadRow2}
@@ -472,9 +472,9 @@ function buildTable({
             ${noPlan ? '' : `<th style="${thStyleData}background:transparent">%</th>`}
 
             ${gapHeadRow2}
-            <th style="${thStyleData}text-align:left">Produto</th>
+            <th style="${thStyleData}">Produto</th>
             ${gapHeadRow2}
-            <th style="${thStyleData}background:rgba(245,127,23,0.06);text-align:left">Desvio</th>
+            <th style="${thStyleData}">Desvio</th>
           </tr>
         </thead>
         <tbody>
@@ -506,9 +506,9 @@ function buildTable({
             ${noPlan ? '' : pctCell(r.todayReal, r.todayPlan)}
 
             ${gap}
-            <td style="${tdStyle};text-align:left;font-size:.8rem;color:#495057">${r.todayProduto || '—'}</td>
+            <td style="${tdStyle};text-align:left;font-size:.8rem;color:#495057">${r.todayProduto || '-'}</td>
             ${gap}
-            <td style="${tdStyle};text-align:left;font-size:.78rem;color:#1d1d1f;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
+            <td style="${tdStyle};text-align:left;font-size:.78rem;color:#1d1d1f;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '-'}</td>
           </tr>`).join('')}
           <tr style="background:#e3eeff;font-weight:700">
             <td style="padding:10px;border-top:2px solid var(--color-blue);position:sticky;left:0;background:#e3eeff;z-index:1">${totalLabel}</td>
