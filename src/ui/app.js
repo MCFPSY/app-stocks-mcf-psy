@@ -40,6 +40,7 @@ export function renderApp(root, profile) {
         <h1><div class="logo">S</div> Stocks MCF + PSY</h1>
         <div class="header-right">
           <div class="sync-pill" id="syncPill"><span class="sync-dot"></span><span id="syncText">Sincronizado</span></div>
+          ${(profile.perfil === 'admin' || profile.perfil === 'admin_producao') ? `<button id="editModeBtn" title="Modo edição" style="background:transparent;border:none;font-size:1.25rem;cursor:pointer;padding:4px 8px;border-radius:6px" data-edit="false">✏️</button>` : ''}
           ${profile.perfil === 'admin' ? `<button id="settingsBtn" title="Definições" style="background:transparent;border:none;font-size:1.3rem;cursor:pointer;padding:4px 8px">⚙️</button>` : ''}
           <div class="user-chip" id="userChip"><div class="avatar">${profile.nome.slice(0,2).toUpperCase()}</div>${profile.nome} · ${profile.perfil}</div>
         </div>
@@ -64,6 +65,18 @@ export function renderApp(root, profile) {
 
   const settingsBtn = root.querySelector('#settingsBtn');
   if (settingsBtn) settingsBtn.addEventListener('click', openSettingsModal);
+
+  const editBtn = root.querySelector('#editModeBtn');
+  if (editBtn) editBtn.addEventListener('click', () => {
+    const on = editBtn.dataset.edit === 'true';
+    const next = !on;
+    editBtn.dataset.edit = String(next);
+    editBtn.style.background = next ? '#d4edda' : 'transparent';
+    editBtn.title = next ? 'Sair do modo edição' : 'Modo edição';
+    window.__editMode = next;
+    window.dispatchEvent(new CustomEvent('edit-mode-change', { detail: next }));
+    renderCurrentTab();
+  });
   renderCurrentTab();
   refreshBadges();
   updateSyncPill();
@@ -183,21 +196,33 @@ async function openSettingsModal() {
   const allTabs = TABS.map(t => ({ id: t.id, label: t.label }));
   const content = modal.querySelector('#settingsContent');
 
+  // Get default perms from profile role
+  const roleDefaults = {
+    operador:       { tabs: ['malotes','psy','transfer','inventario','pedidos'], write: ['movimentos','pedidos','psy_producao'] },
+    contabilista:   { tabs: ['main','inventario','movimentos','pedidos'], write: ['contabilizacao','pedidos'] },
+    admin_producao: { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas'], write: ['movimentos','pedidos','duvidas','psy_producao'] },
+    admin:          { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas','ajustes'], write: ['*'] },
+  };
+
   content.innerHTML = users.map(u => {
-    const p = perms.get(u.id) || { tabs: null, write_tabs: null };
-    const hasCustom = p.tabs !== null;
+    const p = perms.get(u.id);
+    const hasCustom = !!p;
+    const defaults = roleDefaults[u.perfil] || { tabs: [], write: [] };
+    // Use custom if set, else use role defaults (so checkboxes show actual current access)
+    const viewTabs = p ? (p.tabs || []) : defaults.tabs;
+    const writeTabs = p ? (p.write_tabs || []) : (defaults.write.includes('*') ? allTabs.map(t => t.id) : defaults.write);
     return `
       <div style="border:1px solid var(--color-border);border-radius:10px;padding:12px;margin-bottom:12px" data-user-id="${u.id}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <b>${u.nome}</b>
-          <span style="font-size:.75rem;color:#6e6e73">${u.perfil}${hasCustom ? ' · <b style="color:#007AFF">permissões custom</b>' : ''}</span>
+          <span style="font-size:.75rem;color:#6e6e73">Perfil: <b>${u.perfil}</b>${hasCustom ? ' · <span style="color:#007AFF">⚙️ custom</span>' : ' · <span style="color:#1b5e20">✓ defaults</span>'}</span>
         </div>
         <table style="width:100%;font-size:.85rem">
           <thead><tr><th style="text-align:left;padding:4px">Tab</th><th style="text-align:center;padding:4px">Ver</th><th style="text-align:center;padding:4px">Escrever</th></tr></thead>
           <tbody>
             ${allTabs.map(t => {
-              const view = p.tabs ? (p.tabs.includes(t.id)) : null;
-              const write = p.write_tabs ? (p.write_tabs.includes(t.id)) : null;
+              const view = viewTabs.includes(t.id);
+              const write = writeTabs.includes(t.id);
               return `<tr>
                 <td style="padding:4px">${t.label}</td>
                 <td style="text-align:center;padding:4px"><input type="checkbox" data-view="${t.id}" ${view ? 'checked' : ''}></td>
@@ -207,8 +232,8 @@ async function openSettingsModal() {
           </tbody>
         </table>
         <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="btn btn-primary" style="padding:6px 14px;font-size:.8rem" data-action="save">💾 Gravar</button>
-          <button class="btn btn-secondary" style="padding:6px 14px;font-size:.8rem" data-action="reset">Reset (usar perfil)</button>
+          <button class="btn btn-primary" style="padding:6px 14px;font-size:.8rem" data-action="save">💾 Gravar (criar override custom)</button>
+          ${hasCustom ? `<button class="btn btn-secondary" style="padding:6px 14px;font-size:.8rem" data-action="reset">↩ Reset (voltar ao perfil)</button>` : ''}
         </div>
       </div>
     `;

@@ -1,8 +1,8 @@
 import { supabase } from '../../supabase.js';
 
 let currentEmpresa = 'mcf';
-let editMode = false;
 let currentCtx = null;
+// (window.__editMode === true) now comes from global window.__(window.__editMode === true) set by header button
 
 // ========================================================
 // ISO week helpers
@@ -67,14 +67,10 @@ export async function renderMain(el, ctx) {
   currentCtx = ctx;
   const today = new Date();
   const now = isoWeek(today);
-  const isAdmin = ctx.profile?.perfil === 'admin' || ctx.profile?.perfil === 'admin_producao';
 
   el.innerHTML = `
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px">
-        <h2 style="margin:0">📈 Dashboard — Controlo de Produção</h2>
-        ${isAdmin ? `<button type="button" id="editModeBtn" class="btn ${editMode ? 'btn-success' : 'btn-secondary'}" style="padding:8px 14px;font-size:.85rem">${editMode ? '✓ Sair do modo edição' : '✏️ Modo edição'}</button>` : ''}
-      </div>
+      <h2 style="margin-bottom:10px">📈 Dashboard — Controlo de Produção</h2>
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
         <div class="field" style="min-width:180px">
           <label>Semana de referência</label>
@@ -107,12 +103,6 @@ export async function renderMain(el, ctx) {
 
   el.querySelector('#weekPicker').addEventListener('change', load);
   el.querySelector('#dayPicker').addEventListener('change', load);
-
-  const editBtn = el.querySelector('#editModeBtn');
-  if (editBtn) editBtn.addEventListener('click', () => {
-    editMode = !editMode;
-    renderMain(el, ctx); // full re-render to update button text
-  });
 
   async function load() {
     const picker = el.querySelector('#weekPicker').value;
@@ -172,7 +162,7 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     supabase.from('mcf_linhas').select('*').eq('ativo', true).order('ordem'),
     supabase.from('v_mcf_semanal').select('*').in('semana', allWeekKeys),
     // Raw movimentos for current week (need daily + today breakdown)
-    supabase.from('movimentos').select('linha, data_registo, criado_em, produto_stock, m3, malotes')
+    supabase.from('movimentos').select('linha, data_registo, criado_em, produto_stock, m3, malotes, desvio_objetivo')
       .eq('tipo','entrada_producao').eq('empresa','MCF').eq('estornado',false).eq('duvida_resolvida',true)
       .not('linha','is',null)
       .gte('data_registo', weekStartIso).lte('data_registo', weekEndIso),
@@ -212,12 +202,15 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     const linha = linhas.find(l => l.nome === m.linha); if (!linha) continue;
     const d = m.data_registo || m.criado_em.slice(0,10);
     const buck = byDay.get(linha.nome);
-    if (!buck[d]) buck[d] = { m3: 0, plano: 0, produtos: new Set(), firstProduto: m.produto_stock };
+    if (!buck[d]) buck[d] = { m3: 0, plano: 0, produtos: new Set(), firstProduto: m.produto_stock, desvios: [] };
     buck[d].m3 += Number(m.m3 || 0);
     if (!buck[d].produtos.has(m.produto_stock)) {
       buck[d].produtos.add(m.produto_stock);
       const bm = bmMap.get(`${m.produto_stock}|${linha.tipo_benchmark}`);
       buck[d].plano += bm || 0;
+    }
+    if (m.desvio_objetivo && m.desvio_objetivo.trim()) {
+      buck[d].desvios.push(m.desvio_objetivo.trim());
     }
   }
 
@@ -236,12 +229,13 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     const todayReal = (dayBuck[dayIso]?.m3) || 0;
     const todayPlan = (dayBuck[dayIso]?.plano) || 0;
     const todayProduto = (dayBuck[dayIso]?.firstProduto) || '';
+    const todayCausas = (dayBuck[dayIso]?.desvios || []).join(' · ');
 
     return {
       linha: l,
       pastWeekly, pastAccReal, pastAccPlan,
       dailyCells, weekReal, weekPlan,
-      todayReal, todayPlan, todayProduto,
+      todayReal, todayPlan, todayProduto, todayCausas,
     };
   });
 
@@ -281,7 +275,7 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
 
   const [semanalRes, prodRes] = await Promise.all([
     supabase.from('v_psy_semanal').select('*').in('semana', allWeekKeys),
-    supabase.from('psy_producao').select('linha, turno, data_registo, quantidade')
+    supabase.from('psy_producao').select('linha, turno, data_registo, quantidade, produto, desvio_objetivo')
       .gte('data_registo', weekStartIso).lte('data_registo', weekEndIso),
   ]);
   if (semanalRes.error) { el.innerHTML = `<p>Erro: ${semanalRes.error.message}</p>`; return; }
@@ -318,8 +312,9 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
     const todayMovs = movs.filter(m => match(m) && m.data_registo === dayIso);
     const todayReal = todayMovs.reduce((s,m) => s + Number(m.quantidade || 0), 0);
     const todayProduto = todayMovs[0]?.produto || '';
+    const todayCausas = [...new Set(todayMovs.map(m => m.desvio_objetivo).filter(Boolean))].join(' · ');
 
-    return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan: 0, dailyCells, weekReal, weekPlan: 0, todayReal, todayPlan: 0, todayProduto };
+    return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan: 0, dailyCells, weekReal, weekPlan: 0, todayReal, todayPlan: 0, todayProduto, todayCausas };
   });
 
   const pastWeeklyTot = pastWeeks.map((_, i) => ({ real: rows.reduce((s,r) => s + r.pastWeekly[i].real, 0), plano: 0 }));
@@ -398,43 +393,46 @@ function buildTable({
   // Block 2: Days of current week (7 cols) + Total plano + Total real + %
   // Block 3: Today (Plano + Real + %)
 
-  // If block 1 collapsed, show only summary (no weekly detail)
-  const block1CollapsedCols = noPlan ? 1 : 3; // only acc totals
   const block1FullCols = pastWeeks.length + (noPlan ? 1 : 3);
-  const block1Cols = pastCollapsed ? block1CollapsedCols : block1FullCols;
+  const block1Cols = pastCollapsed ? 1 : block1FullCols; // 1 narrow col when collapsed
   const block2Cols = days.length + (noPlan ? 1 : 3);
   const block3Cols = noPlan ? 1 : 3;
   const block4Cols = 1; // Produto
-  const block5Cols = 1; // Top 3 paragens (spans 3 rows visually)
+  const block5Cols = 1; // Causas raíz
 
   const gap = `<td style="padding:0;width:18px;background:#fff;border-bottom:none" class="gap-col"></td>`;
   const gapHeadRow2 = `<th style="padding:0;width:18px;background:#fff;border-bottom:none"></th>`;
   const gapHeadTop = `<th style="padding:0;width:18px;background:#fff;border-bottom:none;border-top:none"></th>`;
 
-  const collapseBtn = `<button type="button" id="togglePastBtn" style="background:transparent;border:none;color:#fff;cursor:pointer;font-size:.75rem;padding:2px 8px;border-radius:4px">${pastCollapsed ? '▸ expandir' : '▾ minimizar'}</button>`;
+  const collapseBtn = `<button type="button" id="togglePastBtn" style="background:rgba(255,255,255,0.25);border:none;color:#fff;cursor:pointer;font-size:1rem;padding:0;border-radius:4px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700" title="${pastCollapsed ? 'Expandir últimas semanas' : 'Minimizar'}">${pastCollapsed ? '+' : '−'}</button>`;
 
   return `
-    <div style="overflow-x:auto">
+    <div style="display:flex;gap:16px;align-items:flex-start">
+    <div style="flex:1;overflow-x:auto;min-width:0">
       <table style="width:100%;border-collapse:collapse;min-width:${pastCollapsed ? 1100 : 1500}px;font-size:.85rem">
         <thead>
           <tr>
             <th rowspan="3" style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7;position:sticky;left:0;z-index:2">Linha</th>
             <th rowspan="3" style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7">HC</th>
             ${gapHeadTop}
-            <th colspan="${block1Cols}" style="${thStyleGroup}background:#6c757d">Últimas ${pastWeeks.length} semanas ${collapseBtn}</th>
+            <th colspan="${block1Cols}" style="${thStyleGroup}background:#6c757d">${pastCollapsed ? collapseBtn : `Últimas ${pastWeeks.length} semanas ${collapseBtn}`}</th>
             ${gapHeadTop}
             <th colspan="${block2Cols}" style="${thStyleGroup}background:#007AFF">Semana atual</th>
             ${gapHeadTop}
             <th colspan="${block3Cols}" style="${thStyleGroup}background:#f57f17">Hoje (${todayLabel})</th>
             ${gapHeadTop}
             <th colspan="${block4Cols}" style="${thStyleGroup}background:#34C759">Produto</th>
+            ${gapHeadTop}
+            <th colspan="${block5Cols}" style="${thStyleGroup}background:#d32f2f">Causas raíz</th>
           </tr>
           <tr style="background:#f5f5f7">
             ${gapHeadRow2}
-            ${pastCollapsed ? '' : pastWeeks.map(w => `<th style="${thStyleData}color:#6e6e73">${w.label}</th>`).join('')}
-            ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">Plano</th>`}
-            <th style="${thStyleData}background:#eef3fc">Real</th>
-            ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">%</th>`}
+            ${pastCollapsed ? `<th style="${thStyleData};background:#f5f5f7">&nbsp;</th>` : `
+              ${pastWeeks.map(w => `<th style="${thStyleData}color:#6e6e73">${w.label}</th>`).join('')}
+              ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">Plano</th>`}
+              <th style="${thStyleData}background:#eef3fc">Real</th>
+              ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">%</th>`}
+            `}
 
             ${gapHeadRow2}
             ${days.map(d => `<th style="${thStyleData}${d.todayFlag ? ';background:#fff3cd;color:#856404' : ''}">${d.label}<div style="font-size:.65rem;color:#6e6e73;font-weight:400">${d.dayNum}</div></th>`).join('')}
@@ -448,23 +446,27 @@ function buildTable({
             ${noPlan ? '' : `<th style="${thStyleData}background:#fff4e0">%</th>`}
 
             ${gapHeadRow2}
-            <th style="${thStyleData}background:#e8f5e9;text-align:left">Produto hoje</th>
+            <th style="${thStyleData}background:#e8f5e9;text-align:left">Produto</th>
+            ${gapHeadRow2}
+            <th style="${thStyleData}background:#ffebee;text-align:left">Desvio</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(r => `<tr>
             <td style="padding:8px;border-bottom:1px solid #f0f0f3;position:sticky;left:0;background:#fff;z-index:1">${r.linha.nome}</td>
             <td style="padding:8px;text-align:center;border-bottom:1px solid #f0f0f3">
-              ${editMode
+              ${(window.__editMode === true)
                 ? `<input type="number" min="0" value="${r.linha.hc || 0}" data-hc-linha="${r.linha.nome}" data-hc-empresa="${totalLabel.includes('MCF') ? 'mcf' : 'psy'}" style="width:50px;padding:4px;border:1px solid var(--color-blue);border-radius:4px;text-align:center;font-weight:600">`
                 : (r.linha.hc || 0)}
             </td>
 
             ${gap}
-            ${pastCollapsed ? '' : r.pastWeekly.map(c => valCell(c)).join('')}
-            ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.pastAccPlan)}</td>`}
-            ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:#f7faff;font-weight:600')}
-            ${noPlan ? '' : pctCell(r.pastAccReal, r.pastAccPlan)}
+            ${pastCollapsed ? `<td style="${tdStyle};background:#f5f5f7;text-align:center;color:#adb5bd">···</td>` : `
+              ${r.pastWeekly.map(c => valCell(c)).join('')}
+              ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.pastAccPlan)}</td>`}
+              ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:#f7faff;font-weight:600')}
+              ${noPlan ? '' : pctCell(r.pastAccReal, r.pastAccPlan)}
+            `}
 
             ${gap}
             ${r.dailyCells.map((c,i) => valCell(c)).join('')}
@@ -479,16 +481,20 @@ function buildTable({
 
             ${gap}
             <td style="${tdStyle};text-align:left;background:#f1f8e9;font-size:.8rem;color:#33691e">${r.todayProduto || '—'}</td>
+            ${gap}
+            <td style="${tdStyle};text-align:left;background:#ffebee;font-size:.78rem;color:#b71c1c;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
           </tr>`).join('')}
           <tr style="background:#e3eeff;font-weight:700">
             <td style="padding:10px;border-top:2px solid var(--color-blue);position:sticky;left:0;background:#e3eeff;z-index:1">${totalLabel}</td>
             <td style="padding:10px;text-align:center;border-top:2px solid var(--color-blue)">${totalHC}</td>
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
-            ${pastCollapsed ? '' : pastWeeklyTot.map(c => valCellTot(c)).join('')}
-            ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(pastAccPlanTot)}</td>`}
-            ${valCellTot({ real: pastAccRealTot, plano: pastAccPlanTot })}
-            ${noPlan ? '' : pctCellTot(pastAccRealTot, pastAccPlanTot)}
+            ${pastCollapsed ? `<td style="${tdStyleTot};text-align:center;color:#adb5bd">···</td>` : `
+              ${pastWeeklyTot.map(c => valCellTot(c)).join('')}
+              ${noPlan ? '' : `<td style="${tdStyleTot}">${fmtPlan(pastAccPlanTot)}</td>`}
+              ${valCellTot({ real: pastAccRealTot, plano: pastAccPlanTot })}
+              ${noPlan ? '' : pctCellTot(pastAccRealTot, pastAccPlanTot)}
+            `}
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
             ${dailyTot.map((c,i) => valCellTot(c)).join('')}
@@ -503,25 +509,25 @@ function buildTable({
 
             <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
             <td style="${tdStyleTot}"></td>
+            <td style="padding:0;width:18px;background:#fff;border-top:none"></td>
+            <td style="${tdStyleTot}"></td>
           </tr>
         </tbody>
       </table>
     </div>
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:16px">
-      <p class="sub" style="margin:0">Unidade: ${unit}. Cinza = últimas semanas · Azul = semana atual · Laranja = hoje. "—" sem dados/benchmark.</p>
-      <div style="background:#fff;border:2px solid #f57f17;border-radius:12px;padding:14px">
-        <h3 style="font-size:.95rem;margin-bottom:10px;color:#f57f17">🚨 Top 3 causas paragens</h3>
-        <div id="top3Paragens">
+      <div style="width:240px;flex-shrink:0;background:#fff;border:2px solid #f57f17;border-radius:12px;padding:12px;position:sticky;top:10px">
+        <h3 style="font-size:.85rem;margin-bottom:10px;color:#f57f17;text-align:center;font-weight:700">🚨 TOP 3<br>CAUSAS PARAGENS</h3>
+        <div id="top3Paragens" style="display:flex;flex-direction:column;gap:8px">
           ${[0,1,2].map(i => `
-            <div style="padding:8px 10px;border-left:3px solid #f57f17;background:#fff8e1;margin-bottom:6px;font-size:.85rem">
-              ${editMode
-                ? `<input type="text" value="${(paragens[i] || '').replace(/"/g,'&quot;')}" data-paragem-idx="${i}" data-paragem-key="${paragensKey}" placeholder="Causa ${i+1}..." style="width:100%;padding:4px 6px;border:1px solid #f57f17;border-radius:4px;font-size:.85rem;background:#fff">`
-                : `<span>${paragens[i] || '—'}</span>`}
+            <div style="padding:10px;border:1px solid #ffe0b2;background:#fff8e1;border-radius:6px;font-size:.82rem;min-height:50px;display:flex;align-items:center">
+              ${(window.__editMode === true)
+                ? `<input type="text" value="${(paragens[i] || '').replace(/"/g,'&quot;')}" data-paragem-idx="${i}" data-paragem-key="${paragensKey}" placeholder="Causa ${i+1}..." style="width:100%;padding:4px 6px;border:1px solid #f57f17;border-radius:4px;font-size:.82rem;background:#fff">`
+                : `<span>${paragens[i] || '<span style="color:#999">—</span>'}</span>`}
             </div>
           `).join('')}
         </div>
-        <p class="sub" style="margin-top:8px;font-size:.75rem">${editMode ? 'Escreve e sai do campo para gravar.' : 'Editável apenas em modo edição (admin).'}</p>
       </div>
     </div>
+    <p class="sub" style="margin-top:12px">Unidade: ${unit}. Cinza = últimas semanas · Azul = semana atual · Laranja = hoje. "Causas raíz" vem do campo "Desvio ao objetivo" dos registos. "—" sem dados.</p>
   `;
 }
