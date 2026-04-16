@@ -1,7 +1,16 @@
+// Registos Produção MCF — grelha "turno-style"
+// - No início do turno: empilhadorista escolhe produto + peças/malote por linha
+// - Durante o turno: incrementa/decrementa malotes com botões grandes [−] (X) [+]
+// - Auto-save a cada interação (localStorage) — nunca se perde nada
+// - Submeter = envia todos os registos >0 para a BD. Reset = limpa tudo.
+
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
 import { addMovimento, cachePut, cacheGet } from '../../offline.js';
 
+// =========================================================
+// Caches
+// =========================================================
 let mpCache = null;
 let linhasCache = null;
 
@@ -13,7 +22,7 @@ async function loadMP() {
   }
   const cached = await cacheGet('mp_standard');
   if (cached) { mpCache = cached; return cached; }
-  toast('Sem produtos em cache — liga à internet uma vez para os descarregar','error');
+  toast('Sem produtos em cache — liga à internet uma vez','error');
   return [];
 }
 
@@ -28,217 +37,361 @@ async function loadLinhasMCF() {
   return linhasCache;
 }
 
+// =========================================================
+// Estado (persistido em localStorage por utilizador)
+// =========================================================
+function storageKey(userId) {
+  return `mcfpsy-mcf-turno-${userId}`;
+}
+
+function loadState(userId) {
+  try {
+    const raw = localStorage.getItem(storageKey(userId));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function saveState(userId, state) {
+  try {
+    localStorage.setItem(storageKey(userId), JSON.stringify(state));
+  } catch (e) { console.warn('saveState error', e); }
+}
+
+function clearState(userId) {
+  localStorage.removeItem(storageKey(userId));
+}
+
+// =========================================================
+// Render
+// =========================================================
 export async function renderMalotes(el, ctx) {
-  el.innerHTML = `<div class="card"><h2>📦 Registos de Produção MCF</h2><p class="sub">A carregar produtos...</p></div>`;
+  el.innerHTML = `<div class="card"><h2>📦 Registos Produção MCF</h2><p class="sub">A carregar setup do turno...</p></div>`;
   const [mp, linhas] = await Promise.all([loadMP(), loadLinhasMCF()]);
 
-  // produtos únicos por (categoria, produto_conversao || produto_stock)
-  const cats = [...new Set(mp.map(x => x.categoria))];
-  const defaultCat = cats.includes('tabuas') ? 'tabuas' : cats[0];
+  // Filtra linhas ativas com categoria definida (as outras aparecem mas sem filtro de produto)
+  const linhasOrdenadas = linhas;
+
+  // Estado inicial (do localStorage ou default)
+  const userId = ctx.profile.id;
+  const hoje = new Date().toISOString().slice(0, 10);
+  let state = loadState(userId);
+  if (!state || state.data_registo !== hoje) {
+    // Reset automático quando muda o dia
+    state = {
+      data_registo: hoje,
+      turno: state?.turno || 'T1',
+      linhas: {},
+    };
+    // Pré-popular linhas com defaults
+    for (const l of linhasOrdenadas) {
+      state.linhas[l.nome] = { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
+    }
+    saveState(userId, state);
+  }
+
+  // Garantir que todas as linhas existem no state (caso tenham sido adicionadas depois)
+  for (const l of linhasOrdenadas) {
+    if (!state.linhas[l.nome]) {
+      state.linhas[l.nome] = { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
+    }
+  }
+
+  // Helper: produtos disponíveis para a linha (por categoria)
+  function produtosDaLinha(linha) {
+    if (!linha.categoria) return mp;
+    return mp.filter(p => p.categoria === linha.categoria);
+  }
+
+  // Helper: encontra produto por produto_stock
+  function findMp(produto_stock) {
+    return mp.find(p => p.produto_stock === produto_stock);
+  }
+
+  // Helper: m³ calculado para uma linha
+  function calcM3(linhaState) {
+    const p = findMp(linhaState.produto_stock);
+    if (!p) return 0;
+    const tot = (linhaState.malotes || 0) * (linhaState.pecas_por_malote || 0);
+    const vol1 = (p.comprimento / 1000) * (p.largura / 1000) * (p.espessura / 1000);
+    return +(vol1 * tot).toFixed(4);
+  }
+
+  // =========================================================
+  // Build HTML
+  // =========================================================
+  function rowHTML(linha) {
+    const lineState = state.linhas[linha.nome];
+    const produtos = produtosDaLinha(linha);
+    const prodSuggest = findMp(lineState.produto_stock);
+    const defaultPecas = prodSuggest ? prodSuggest.pecas_por_malote : 0;
+    const malotes = lineState.malotes || 0;
+    const m3v = calcM3(lineState);
+    const totPecas = malotes * (lineState.pecas_por_malote || 0);
+
+    return `
+      <tr data-linha="${linha.nome}">
+        <td style="padding:10px;font-weight:600;white-space:nowrap">${linha.nome}</td>
+        <td style="padding:8px">
+          <select class="field-prod" style="width:100%;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
+            <option value="">— Escolher produto —</option>
+            ${produtos.map(p => `<option value="${p.produto_stock}" ${p.produto_stock === lineState.produto_stock ? 'selected' : ''}>${p.produto_conversao && p.produto_conversao !== p.produto_stock ? `${p.produto_conversao} → ${p.produto_stock}` : p.produto_stock}</option>`).join('')}
+          </select>
+        </td>
+        <td style="padding:8px;width:100px">
+          <input type="number" class="field-pecas" min="0" step="1" value="${lineState.pecas_por_malote || ''}" placeholder="${defaultPecas || '-'}" style="width:100%;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-size:.95rem;text-align:center;font-weight:600">
+        </td>
+        <td style="padding:8px">
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+            <button type="button" class="btn-dec" style="width:44px;height:44px;border:2px solid var(--color-blue);background:#fff;color:var(--color-blue);border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">−</button>
+            <input type="number" class="field-mal" min="0" step="0.5" value="${malotes}" style="width:80px;padding:10px;border:2px solid var(--color-border);border-radius:10px;text-align:center;font-size:1.2rem;font-weight:700">
+            <button type="button" class="btn-inc" style="width:44px;height:44px;border:2px solid var(--color-blue);background:var(--color-blue);color:#fff;border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">+</button>
+          </div>
+        </td>
+        <td style="padding:8px;text-align:center;font-weight:600;color:#1d1d1f" class="cell-totpecas">${totPecas || '-'}</td>
+        <td style="padding:8px;text-align:center;font-weight:600;color:#495057" class="cell-m3">${m3v ? m3v.toFixed(3) + ' m³' : '-'}</td>
+      </tr>
+    `;
+  }
 
   el.innerHTML = `
     <div class="card">
-      <h2>📦 Registos de Produção MCF</h2>
-      <p class="sub">Empilhadorista — escolhe produto, nº malotes e peças por malote. Total e m³ são automáticos.</p>
-      <form id="fMal">
-        <div class="form-grid">
-          <div class="field">
-            <label>Data do registo</label>
-            <input class="big" id="dataRegisto" type="date" value="${new Date().toISOString().slice(0,10)}">
-          </div>
-          <div class="field">
-            <label>Linha de produção</label>
-            <select id="linha" style="width:100%;padding:14px 16px;border:2px solid var(--color-border);border-radius:12px;font-size:1rem;background:#fff;min-height:54px">
-              ${linhas.map(l => `<option value="${l.nome}">${l.nome}</option>`).join('')}
-            </select>
-          </div>
-          <div class="field">
-            <label>Turno</label>
-            <select class="big" id="turno">
-              <option value="T1">T1</option>
-              <option value="T2">T2</option>
-              <option value="T3">T3</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Categoria</label>
-            <select class="big" id="cat">${cats.map(c=>`<option ${c===defaultCat?'selected':''}>${c}</option>`).join('')}</select>
-          </div>
-          <div class="field">
-            <label>Produto registado</label>
-            <select class="big" id="prod"></select>
-          </div>
-          <div class="field">
-            <label>Produto stock (auto)</label>
-            <input class="big readonly" id="prodStock" readonly>
-            <span class="hint" id="convHint"></span>
-          </div>
-          <div class="field">
-            <label>Nº de malotes</label>
-            <input class="big" id="nMal" type="number" min="0" step="0.01" inputmode="decimal">
-          </div>
-          <div class="field">
-            <label>Peças por malote</label>
-            <input class="big" id="nPec" type="number" min="1" step="1" inputmode="numeric">
-            <span class="hint" id="pecHint"></span>
-          </div>
-          <div class="field">
-            <label>Total peças (auto)</label>
-            <input class="big readonly" id="totPec" readonly>
-          </div>
-          <div class="field">
-            <label>m³ totais (auto)</label>
-            <input class="big readonly" id="m3" readonly>
-          </div>
-          <div class="field">
-            <label>Incerteza no produto?</label>
-            <select class="big" id="incerteza"><option value="false">Não</option><option value="true">Sim — enviar para Dúvidas</option></select>
-          </div>
-          <div class="field" style="grid-column:1/-1">
-            <label>Desvio ao objetivo (opcional)</label>
-            <textarea id="desvioObj" rows="2" placeholder="Explica motivos de eventual desvio ao objetivo (paragens, avarias, falta de material, etc.)..." style="font-family:inherit;font-size:.95rem;padding:12px 14px;border:2px solid var(--color-border);border-radius:12px;resize:vertical"></textarea>
-          </div>
-          <div class="field" id="obsField" style="display:none;grid-column:1/-1">
-            <label>Observações da dúvida</label>
-            <textarea id="observacoes" rows="3" placeholder="Descreve a dúvida ou observações..." style="font-family:inherit;font-size:1rem;padding:14px 16px;border:2px solid var(--color-border);border-radius:12px;resize:vertical"></textarea>
-          </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">📦 Registos Produção MCF</h2>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span class="sync-pill" id="autoSaveInd" style="padding:4px 10px;background:#eef7ee;color:#1f7a3a;border-radius:999px;font-size:.75rem;font-weight:600">✓ Guardado</span>
         </div>
-        <div class="btn-row">
-          <button type="button" class="btn btn-secondary btn-big" id="clearBtn">Limpar</button>
-          <button type="submit" class="btn btn-primary btn-big" id="subBtn">✓ Registar entrada</button>
+      </div>
+      <p class="sub">Setup do turno: escolhe produto e peças/malote por linha (uma vez no início). Usa os botões <b>+</b> e <b>−</b> para somar malotes durante o turno. Tudo é guardado automaticamente no teu dispositivo — nada se perde até submeteres ou fazeres reset.</p>
+
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="field" style="min-width:160px">
+          <label>Data</label>
+          <input type="date" id="dataReg" value="${state.data_registo}" style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem">
         </div>
-      </form>
+        <div class="field" style="min-width:120px">
+          <label>Turno</label>
+          <select id="turnoSel" style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem">
+            <option value="T1" ${state.turno==='T1'?'selected':''}>T1</option>
+            <option value="T2" ${state.turno==='T2'?'selected':''}>T2</option>
+            <option value="T3" ${state.turno==='T3'?'selected':''}>T3</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="overflow-x:auto">
+        <table id="grelha" style="width:100%;border-collapse:collapse;min-width:900px;font-size:.9rem">
+          <thead>
+            <tr style="background:#f5f5f7">
+              <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0">Linha</th>
+              <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0">Produto</th>
+              <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0">Peças/malote</th>
+              <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0">Nº malotes</th>
+              <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0">Total peças</th>
+              <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0">m³</th>
+            </tr>
+          </thead>
+          <tbody id="grelhaBody">
+            ${linhasOrdenadas.map(rowHTML).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#f0f7ff;font-weight:700">
+              <td colspan="3" style="padding:12px;border-top:2px solid var(--color-blue)">Total do turno</td>
+              <td style="padding:12px;text-align:center;border-top:2px solid var(--color-blue)" id="totMalotes">0</td>
+              <td style="padding:12px;text-align:center;border-top:2px solid var(--color-blue)" id="totPecas">0</td>
+              <td style="padding:12px;text-align:center;border-top:2px solid var(--color-blue)" id="totM3">0 m³</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="btn-row" style="margin-top:20px">
+        <button type="button" class="btn btn-danger btn-big" id="resetBtn">🗑 Reset</button>
+        <button type="button" class="btn btn-success btn-big" id="submitBtn">✓ Submeter turno</button>
+      </div>
     </div>
   `;
 
-  const $ = id => el.querySelector('#'+id);
-  const catSel = $('cat'), prodSel = $('prod'), prodStock = $('prodStock'), convHint = $('convHint');
-  const nMal = $('nMal'), nPec = $('nPec'), pecHint = $('pecHint'), totPec = $('totPec'), m3Field = $('m3');
+  // =========================================================
+  // Interactions
+  // =========================================================
+  const body = el.querySelector('#grelhaBody');
+  const saveInd = el.querySelector('#autoSaveInd');
 
-  function fillProducts() {
-    const cat = catSel.value;
-    const items = mp.filter(x => x.categoria === cat);
-    const seen = new Set();
-    const opts = [];
-    for (const it of items) {
-      const key = it.produto_conversao || it.produto_stock;
-      if (seen.has(key)) continue; seen.add(key);
-      opts.push(`<option value="${it.id}">${key}</option>`);
-    }
-    prodSel.innerHTML = opts.join('');
-    onProdChange();
+  function flashSave() {
+    saveInd.textContent = '💾 A gravar...';
+    saveInd.style.background = '#e3f2fd';
+    saveInd.style.color = '#0d47a1';
+    setTimeout(() => {
+      saveInd.textContent = '✓ Guardado';
+      saveInd.style.background = '#eef7ee';
+      saveInd.style.color = '#1f7a3a';
+    }, 400);
   }
-  function current() {
-    const id = prodSel.value;
-    return mp.find(x => x.id === id);
+
+  function persist() {
+    saveState(userId, state);
+    flashSave();
   }
-  function onProdChange() {
-    const p = current();
-    if (!p) return;
-    prodStock.value = p.produto_stock;
-    nPec.value = p.pecas_por_malote;
-    pecHint.textContent = `Sugestão BD: ${p.pecas_por_malote}`;
-    convHint.textContent = (p.produto_conversao && p.produto_conversao !== p.produto_stock)
-      ? `↑ Convertido de "${p.produto_conversao}" para "${p.produto_stock}"` : '';
-    recalc();
+
+  function updateRowDerived(linhaNome) {
+    const row = body.querySelector(`tr[data-linha="${CSS.escape(linhaNome)}"]`);
+    if (!row) return;
+    const ls = state.linhas[linhaNome];
+    const totPecas = (ls.malotes || 0) * (ls.pecas_por_malote || 0);
+    row.querySelector('.cell-totpecas').textContent = totPecas || '-';
+    const m3v = calcM3(ls);
+    row.querySelector('.cell-m3').textContent = m3v ? m3v.toFixed(3) + ' m³' : '-';
+    updateTotals();
   }
-  function recalc() {
-    const p = current(); if (!p) return;
-    const nm = parseFloat(nMal.value) || 0;
-    const np = parseInt(nPec.value) || 0;
-    const tot = nm * np;
-    totPec.value = tot;
-    // m3 de uma peça: C × L × E (mm) → m3
-    const vol1 = (p.comprimento/1000) * (p.largura/1000) * (p.espessura/1000);
-    m3Field.value = (vol1 * tot).toFixed(4) + ' m³';
+
+  function updateTotals() {
+    const tm = Object.values(state.linhas).reduce((s, l) => s + (Number(l.malotes) || 0), 0);
+    const tp = Object.values(state.linhas).reduce((s, l) => s + (Number(l.malotes) || 0) * (Number(l.pecas_por_malote) || 0), 0);
+    const tm3 = Object.values(state.linhas).reduce((s, l) => s + calcM3(l), 0);
+    el.querySelector('#totMalotes').textContent = tm.toFixed(1);
+    el.querySelector('#totPecas').textContent = tp.toFixed(0);
+    el.querySelector('#totM3').textContent = tm3.toFixed(3) + ' m³';
   }
-  catSel.addEventListener('change', fillProducts);
-  prodSel.addEventListener('change', onProdChange);
-  nMal.addEventListener('input', recalc);
-  nPec.addEventListener('input', recalc);
-  const obsField = $('obsField');
-  const incertezaSel = $('incerteza');
-  incertezaSel.addEventListener('change', () => {
-    obsField.style.display = incertezaSel.value === 'true' ? '' : 'none';
-  });
-  el.querySelector('#clearBtn').addEventListener('click', () => { nMal.value=''; recalc(); });
 
-  el.querySelector('#fMal').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const p = current(); if (!p) return;
-    const nm = parseFloat(nMal.value);
-    const np = parseInt(nPec.value) || 0;
-    if (!nm || nm <= 0) { toast('Indica o número de malotes','error'); return; }
-    if (!np || np <= 0) { toast('Indica as peças por malote','error'); return; }
-    const tot = nm * np;
-    const vol1 = (p.comprimento/1000) * (p.largura/1000) * (p.espessura/1000);
-    const m3v = +(vol1 * tot).toFixed(4);
-    const inc = $('incerteza').value === 'true';
+  // Change handlers per row
+  body.querySelectorAll('tr[data-linha]').forEach(row => {
+    const linhaNome = row.dataset.linha;
+    const ls = state.linhas[linhaNome];
 
-    const dataReg = $('dataRegisto').value;
-    if (!dataReg) { toast('Indica a data do registo','error'); return; }
+    const prodSel = row.querySelector('.field-prod');
+    const pecasInp = row.querySelector('.field-pecas');
+    const malInp = row.querySelector('.field-mal');
+    const btnDec = row.querySelector('.btn-dec');
+    const btnInc = row.querySelector('.btn-inc');
 
-    const linha = $('linha').value;
-    const turno = $('turno').value;
-    if (!linha) { toast('Indica a linha de produção','error'); return; }
-
-    const obs = inc ? ($('observacoes').value || '').trim() : '';
-
-    const ok = await showSummary({
-      Data: dataReg,
-      Linha: linha,
-      Turno: turno,
-      Empresa: 'MCF',
-      Produto: p.produto_stock,
-      'Malotes × peças': `${nm} × ${np} = ${tot}`,
-      Volume: m3v + ' m³',
-      Incerteza: inc ? 'Sim (vai para Dúvidas)' : 'Não',
-      ...(obs ? { Observações: obs } : {}),
+    // Produto change
+    prodSel.addEventListener('change', () => {
+      ls.produto_stock = prodSel.value;
+      const p = findMp(ls.produto_stock);
+      if (p && (!ls.pecas_por_malote || ls.pecas_por_malote === 0)) {
+        ls.pecas_por_malote = p.pecas_por_malote;
+        pecasInp.value = p.pecas_por_malote;
+        pecasInp.placeholder = p.pecas_por_malote;
+      } else if (p) {
+        pecasInp.placeholder = p.pecas_por_malote;
+      }
+      persist();
+      updateRowDerived(linhaNome);
     });
+
+    // Peças/malote change
+    pecasInp.addEventListener('change', () => {
+      ls.pecas_por_malote = parseInt(pecasInp.value) || 0;
+      persist();
+      updateRowDerived(linhaNome);
+    });
+
+    // Stepper +/-
+    btnInc.addEventListener('click', () => {
+      ls.malotes = (Number(ls.malotes) || 0) + 1;
+      malInp.value = ls.malotes;
+      persist();
+      updateRowDerived(linhaNome);
+    });
+    btnDec.addEventListener('click', () => {
+      ls.malotes = Math.max(0, (Number(ls.malotes) || 0) - 1);
+      malInp.value = ls.malotes;
+      persist();
+      updateRowDerived(linhaNome);
+    });
+
+    // Direct input
+    malInp.addEventListener('change', () => {
+      ls.malotes = Math.max(0, parseFloat(malInp.value) || 0);
+      malInp.value = ls.malotes;
+      persist();
+      updateRowDerived(linhaNome);
+    });
+  });
+
+  // Date / turno
+  el.querySelector('#dataReg').addEventListener('change', (e) => {
+    state.data_registo = e.target.value || hoje;
+    persist();
+  });
+  el.querySelector('#turnoSel').addEventListener('change', (e) => {
+    state.turno = e.target.value;
+    persist();
+  });
+
+  // Reset
+  el.querySelector('#resetBtn').addEventListener('click', () => {
+    if (!confirm('Apagar setup e quantidades atuais? Esta ação não pode ser desfeita.')) return;
+    clearState(userId);
+    linhasCache = null; // force reload in case
+    renderMalotes(el, ctx);
+  });
+
+  // Submit
+  el.querySelector('#submitBtn').addEventListener('click', async () => {
+    const entriesToSubmit = [];
+    for (const [linhaNome, ls] of Object.entries(state.linhas)) {
+      if (!ls.produto_stock) continue;
+      const m = Number(ls.malotes) || 0;
+      if (m <= 0) continue;
+      const np = Number(ls.pecas_por_malote) || 0;
+      if (np <= 0) {
+        toast(`Peças/malote em falta na linha ${linhaNome}`, 'error');
+        return;
+      }
+      const p = findMp(ls.produto_stock);
+      if (!p) continue;
+      const vol1 = (p.comprimento / 1000) * (p.largura / 1000) * (p.espessura / 1000);
+      const m3v = +(vol1 * m * np).toFixed(4);
+      entriesToSubmit.push({
+        tipo: 'entrada_producao',
+        empresa: 'MCF',
+        produto_stock: p.produto_stock,
+        malotes: m,
+        pecas_por_malote: np,
+        m3: m3v,
+        operador_id: ctx.profile.id,
+        incerteza: false,
+        duvida_resolvida: true,
+        data_registo: state.data_registo,
+        linha: linhaNome,
+        turno: state.turno,
+      });
+    }
+
+    if (entriesToSubmit.length === 0) {
+      toast('Sem malotes para submeter. Adiciona pelo menos uma quantidade > 0.', 'error');
+      return;
+    }
+
+    const ok = confirm(`Submeter ${entriesToSubmit.length} registo(s) — total ${entriesToSubmit.reduce((s,e)=>s+e.m3,0).toFixed(2)} m³?`);
     if (!ok) return;
 
-    const subBtn = $('subBtn'); subBtn.disabled = true; subBtn.textContent = 'A gravar...';
-    const res = await addMovimento({
-      tipo: 'entrada_producao',
-      empresa: 'MCF',
-      produto_stock: p.produto_stock,
-      malotes: nm,
-      pecas_por_malote: np,
-      m3: m3v,
-      operador_id: ctx.profile.id,
-      incerteza: inc,
-      duvida_resolvida: !inc,
-      data_registo: dataReg,
-      linha,
-      turno,
-      ...(obs ? { justificacao: obs } : {}),
-      ...(($('desvioObj').value || '').trim() ? { desvio_objetivo: $('desvioObj').value.trim() } : {}),
-    });
-    subBtn.disabled = false; subBtn.textContent = '✓ Registar entrada';
-    toast(res.offline ? '📤 Guardado offline — sincroniza quando houver rede' : '✓ Entrada registada','success');
-    nMal.value=''; recalc();
+    const btn = el.querySelector('#submitBtn');
+    btn.disabled = true; btn.textContent = 'A submeter...';
+    let offline = 0, online = 0;
+    for (const entry of entriesToSubmit) {
+      const res = await addMovimento(entry);
+      if (res.offline) offline++; else online++;
+    }
+    btn.disabled = false; btn.textContent = '✓ Submeter turno';
+
+    toast(
+      offline > 0
+        ? `✓ ${online} submetidos, ${offline} em fila offline`
+        : `✓ ${online} registos submetidos`,
+      'success'
+    );
+
+    // Clear malotes counters but keep setup (produto + peças/malote)
+    for (const linhaNome of Object.keys(state.linhas)) {
+      state.linhas[linhaNome].malotes = 0;
+    }
+    persist();
+    renderMalotes(el, ctx);
     window.dispatchEvent(new CustomEvent('sync-done'));
   });
 
-  fillProducts();
-}
-
-function showSummary(obj) {
-  return new Promise(resolve => {
-    const div = document.createElement('div');
-    div.className = 'modal-overlay';
-    div.innerHTML = `
-      <div class="modal">
-        <h3>📋 Confirmar operação</h3>
-        ${Object.entries(obj).map(([k,v])=>`<div class="summary-row"><span>${k}</span><b>${v}</b></div>`).join('')}
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="cancelBtn">Cancelar</button>
-          <button class="btn btn-success" id="okBtn">✓ Confirmar</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(div);
-    div.querySelector('#cancelBtn').onclick = () => { div.remove(); resolve(false); };
-    div.querySelector('#okBtn').onclick = () => { div.remove(); resolve(true); };
-  });
+  updateTotals();
 }
