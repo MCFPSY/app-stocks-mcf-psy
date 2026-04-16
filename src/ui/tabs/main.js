@@ -398,28 +398,16 @@ function buildTable({
     return `<td style="padding:10px;text-align:right;border-top:2px solid var(--color-blue);color:${pctColor(p)};${pctBg(p)}">${p.toFixed(0)}%</td>`;
   };
 
-  // Value cell with per-cell coloring based on its own real/plan ratio
+  // Value cell (no coloring — only % cells get colored)
   const valCell = (cell, extraStyle = '') => {
     if (!cell) return `<td style="${tdStyle};${extraStyle};color:#6e6e73">—</td>`;
     const real = cell.real || 0;
-    const plan = cell.plano || 0;
-    let bg = '';
-    if (!noPlan && plan) {
-      const p = real / plan * 100;
-      bg = pctBg(p);
-    }
-    return `<td style="${tdStyle};${extraStyle};${bg}">${fmt(real)}</td>`;
+    return `<td style="${tdStyle};${extraStyle}">${fmt(real)}</td>`;
   };
   const valCellTot = (cell, extraStyle = '') => {
     if (!cell) return `<td style="${tdStyleTot};${extraStyle};color:#6e6e73">—</td>`;
     const real = cell.real || 0;
-    const plan = cell.plano || 0;
-    let bg = '';
-    if (!noPlan && plan) {
-      const p = real / plan * 100;
-      bg = pctBg(p);
-    }
-    return `<td style="${tdStyleTot};${extraStyle};${bg}">${fmt(real)}</td>`;
+    return `<td style="${tdStyleTot};${extraStyle}">${fmt(real)}</td>`;
   };
 
   const thStyleData = 'text-align:right;padding:6px;border-bottom:2px solid #e0e0e0;font-size:.8rem;font-weight:600';
