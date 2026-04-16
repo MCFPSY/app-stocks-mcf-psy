@@ -473,7 +473,7 @@ function buildTable({
             `}
 
             ${gapHeadRow2}
-            ${days.map(d => `<th style="${thStyleData}${d.todayFlag ? ';background:#fff3cd;color:#856404' : ''}">${d.label}<div style="font-size:.65rem;color:#6e6e73;font-weight:400">${d.dayNum}</div></th>`).join('')}
+            ${days.map(d => `<th style="${thStyleData}${d.todayFlag ? ';font-weight:800;color:#212529' : ''}">${d.label}<div style="font-size:.65rem;color:#6e6e73;font-weight:400">${d.dayNum}</div></th>`).join('')}
             ${noPlan ? '' : `<th style="${thStyleData}background:transparent">Plano</th>`}
             <th style="${thStyleData}background:transparent">Real</th>
             ${noPlan ? '' : `<th style="${thStyleData}background:transparent">%</th>`}
@@ -484,7 +484,7 @@ function buildTable({
             ${noPlan ? '' : `<th style="${thStyleData}background:transparent">%</th>`}
 
             ${gapHeadRow2}
-            <th style="${thStyleData}background:#e8f5e9;text-align:left">Produto</th>
+            <th style="${thStyleData}text-align:left">Produto</th>
             ${gapHeadRow2}
             <th style="${thStyleData}background:rgba(245,127,23,0.06);text-align:left">Desvio</th>
           </tr>
