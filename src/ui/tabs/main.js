@@ -192,29 +192,30 @@ export async function renderMain(el, ctx) {
 // MCF Dashboard
 // ========================================================
 async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
-  const allWeekKeys = [...pastWeeks.map(w => w.key), currentWeek.key];
   const weekStartIso = days[0].iso;
   const weekEndIso = days[6].iso;
 
-  const [linhasRes, semanalRes, movRes, bmRes] = await Promise.all([
+  // Compute start of earliest past week (Monday) for bulk movimentos fetch
+  const earliestPast = pastWeeks[0];
+  const pastStartIso = isoWeekMonday(earliestPast.year, earliestPast.week).toISOString().slice(0, 10);
+
+  const [linhasRes, movsAllRes, bmRes] = await Promise.all([
     supabase.from('mcf_linhas').select('*').eq('ativo', true).order('ordem'),
-    supabase.from('v_mcf_semanal').select('*').in('semana', allWeekKeys),
-    // Raw movimentos for current week (need daily + today breakdown)
+    // All movimentos across past 7 weeks + current week (day-level granularity)
     supabase.from('movimentos').select('linha, data_registo, criado_em, produto_stock, m3, malotes, desvio_objetivo')
       .eq('tipo','entrada_producao').eq('empresa','MCF').eq('estornado',false).eq('duvida_resolvida',true)
       .not('linha','is',null)
-      .gte('data_registo', weekStartIso).lte('data_registo', weekEndIso),
+      .gte('data_registo', pastStartIso).lte('data_registo', weekEndIso),
     supabase.from('aux_benchmark').select('*'),
   ]);
 
   if (linhasRes.error) { el.innerHTML = `<p>Erro: ${linhasRes.error.message}</p>`; return; }
   const linhas = linhasRes.data;
-  const semanal = semanalRes.data || [];
-  const movs = movRes.data || [];
+  const allMovs = movsAllRes.data || [];
 
-  // Build benchmark structures:
-  // - fixedPerLinha: linha -> target (when produto_stock IS NULL, applies to all products)
-  // - perProduto: "linha|produto" -> target (specific target for product on linha)
+  // Benchmark structures:
+  // - fixedPerLinha: linha -> daily target (when produto_stock IS NULL)
+  // - perProduto: "linha|produto" -> daily target
   const fixedPerLinha = new Map();
   const perProduto = new Map();
   for (const b of (bmRes.data || [])) {
@@ -225,10 +226,8 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     }
   }
 
-  // Helper: compute plano for a given (linha, set of products produced)
-  // - If linha has fixed target → return fixed value (ignores product count)
-  // - Else → sum per-product targets (each distinct product counted once)
-  function planoFor(linhaName, produtosSet) {
+  // Helper: DAILY plano for a (linha, set of distinct products produced that day)
+  function planoPerDay(linhaName, produtosSet) {
     if (fixedPerLinha.has(linhaName)) return fixedPerLinha.get(linhaName);
     let s = 0;
     for (const p of produtosSet) {
@@ -238,28 +237,14 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     return s;
   }
 
-  // Aggregate past weeks: linha -> weekKey -> { m3, produtos(Set) }
-  const weekly = new Map();
-  for (const l of linhas) weekly.set(l.nome, {});
-  for (const r of semanal) {
-    if (!pastWeeks.find(w => w.key === r.semana)) continue;
-    const linha = linhas.find(l => l.nome === r.linha); if (!linha) continue;
-    const buck = weekly.get(linha.nome);
-    if (!buck[r.semana]) buck[r.semana] = { m3: 0, produtos: new Set() };
-    buck[r.semana].m3 += Number(r.m3_total || 0);
-    buck[r.semana].produtos.add(r.produto_stock);
-  }
-  // Compute plano per (linha, week) after aggregation
-  for (const [linhaName, buck] of weekly) {
-    for (const wk of Object.keys(buck)) {
-      buck[wk].plano = planoFor(linhaName, buck[wk].produtos);
-    }
-  }
+  // Split movs into current week vs past (for differing display logic)
+  const movsCurrent = allMovs.filter(m => {
+    const d = m.data_registo || m.criado_em?.slice(0, 10);
+    return d >= weekStartIso && d <= weekEndIso;
+  });
+  const movsSorted = [...movsCurrent].sort((a, b) => (a.criado_em || '').localeCompare(b.criado_em || ''));
 
-  // Sort movs by criado_em ascending (to capture first product of day)
-  const movsSorted = [...movs].sort((a, b) => (a.criado_em || '').localeCompare(b.criado_em || ''));
-
-  // Aggregate current week by day: linha -> dayIso -> { m3, produtos, firstProduto, desvios }
+  // --------- Current week: aggregate by (linha, dayIso) ---------
   const byDay = new Map();
   for (const l of linhas) byDay.set(l.nome, {});
   for (const m of movsSorted) {
@@ -273,10 +258,39 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
       buck[d].desvios.push(m.desvio_objetivo.trim());
     }
   }
-  // Compute plano per (linha, day) after aggregation
   for (const [linhaName, buck] of byDay) {
     for (const dayIso2 of Object.keys(buck)) {
-      buck[dayIso2].plano = planoFor(linhaName, buck[dayIso2].produtos);
+      buck[dayIso2].plano = planoPerDay(linhaName, buck[dayIso2].produtos);
+    }
+  }
+
+  // --------- Past weeks: aggregate by (linha, week) BUT plano = sum of daily planos ---------
+  // Strategy: first aggregate by (linha, day) for past weeks, then roll up to week
+  const pastByDay = new Map();
+  for (const l of linhas) pastByDay.set(l.nome, {});
+  for (const m of allMovs) {
+    const d = m.data_registo || m.criado_em?.slice(0, 10);
+    if (d >= weekStartIso) continue; // only past weeks here
+    const linha = linhas.find(l => l.nome === m.linha); if (!linha) continue;
+    const buck = pastByDay.get(linha.nome);
+    if (!buck[d]) buck[d] = { m3: 0, produtos: new Set() };
+    buck[d].m3 += Number(m.m3 || 0);
+    buck[d].produtos.add(m.produto_stock);
+  }
+
+  // Assign each day to its ISO week key, then sum m3 and plano per week
+  const weekly = new Map();
+  for (const l of linhas) weekly.set(l.nome, {});
+  for (const [linhaName, buck] of pastByDay) {
+    for (const dayIsoKey of Object.keys(buck)) {
+      const d = new Date(dayIsoKey + 'T00:00:00Z');
+      const { year, week } = isoWeek(d);
+      const wk = weekKey(year, week);
+      if (!pastWeeks.find(w => w.key === wk)) continue;
+      const wb = weekly.get(linhaName);
+      if (!wb[wk]) wb[wk] = { m3: 0, plano: 0 };
+      wb[wk].m3 += buck[dayIsoKey].m3;
+      wb[wk].plano += planoPerDay(linhaName, buck[dayIsoKey].produtos);
     }
   }
 
