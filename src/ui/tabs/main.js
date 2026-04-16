@@ -441,13 +441,13 @@ function buildTable({
             <th rowspan="3" style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7;position:sticky;left:0;z-index:2">Linha</th>
             <th rowspan="3" style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7">HC</th>
             ${gapHeadTop}
-            <th colspan="${block1Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">${pastCollapsed ? collapseBtn : `Últimas ${pastWeeks.length} semanas ${collapseBtn}`}</th>
+            <th colspan="${block1Cols}" style="${thStyleGroup}background:transparent">${pastCollapsed ? collapseBtn : `Últimas ${pastWeeks.length} semanas ${collapseBtn}`}</th>
             ${gapHeadTop}
-            <th colspan="${block2Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">Semana atual</th>
+            <th colspan="${block2Cols}" style="${thStyleGroup}background:transparent">Semana atual</th>
             ${gapHeadTop}
-            <th colspan="${block3Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">Hoje (${todayLabel})</th>
+            <th colspan="${block3Cols}" style="${thStyleGroup}background:transparent">Hoje (${todayLabel})</th>
             ${gapHeadTop}
-            <th colspan="${block4Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">Produto</th>
+            <th colspan="${block4Cols}" style="${thStyleGroup}background:transparent">Produto</th>
             ${gapHeadTop}
             <th colspan="${block5Cols}" style="${thStyleGroup}background:rgba(245,127,23,0.15)">Causas raíz</th>
           </tr>
@@ -461,7 +461,7 @@ function buildTable({
             `}
 
             ${gapHeadRow2}
-            ${days.map(d => `<th style="${thStyleData}${d.todayFlag ? ';font-weight:800;color:#212529' : ''}">${d.label}<div style="font-size:.65rem;color:#6e6e73;font-weight:400">${d.dayNum}</div></th>`).join('')}
+            ${days.map(d => `<th style="${thStyleData}">${d.label}<div style="font-size:.65rem;color:#6e6e73;font-weight:400">${d.dayNum}</div></th>`).join('')}
             ${noPlan ? '' : `<th style="${thStyleData}background:transparent">Plano</th>`}
             <th style="${thStyleData}background:transparent">Real</th>
             ${noPlan ? '' : `<th style="${thStyleData}background:transparent">%</th>`}
@@ -508,7 +508,7 @@ function buildTable({
             ${gap}
             <td style="${tdStyle};text-align:left;font-size:.8rem;color:#495057">${r.todayProduto || '—'}</td>
             ${gap}
-            <td style="${tdStyle};text-align:left;font-size:.78rem;color:#e65100;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
+            <td style="${tdStyle};text-align:left;font-size:.78rem;color:#1d1d1f;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
           </tr>`).join('')}
           <tr style="background:#e3eeff;font-weight:700">
             <td style="padding:10px;border-top:2px solid var(--color-blue);position:sticky;left:0;background:#e3eeff;z-index:1">${totalLabel}</td>
