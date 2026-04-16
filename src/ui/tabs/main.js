@@ -69,8 +69,13 @@ export async function renderMain(el, ctx) {
   const now = isoWeek(today);
 
   el.innerHTML = `
-    <div class="card">
-      <h2 style="margin-bottom:10px">📈 Dashboard — Controlo de Produção</h2>
+    <div class="card" id="dashCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">📈 Dashboard — Controlo de Produção</h2>
+        <button type="button" id="fullscreenBtn" title="Ecrã inteiro" style="background:transparent;border:1px solid var(--color-border);cursor:pointer;padding:6px 10px;border-radius:6px;font-size:.85rem;display:flex;align-items:center;gap:6px">
+          <span id="fsIcon">⛶</span> <span id="fsLabel">Ecrã inteiro</span>
+        </button>
+      </div>
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
         <div class="field" style="min-width:180px">
           <label>Semana de referência</label>
@@ -104,6 +109,33 @@ export async function renderMain(el, ctx) {
   el.querySelector('#weekPicker').addEventListener('change', load);
   el.querySelector('#dayPicker').addEventListener('change', load);
 
+  const fsBtn = el.querySelector('#fullscreenBtn');
+  if (fsBtn) fsBtn.addEventListener('click', () => {
+    const card = el.querySelector('#dashCard');
+    if (!document.fullscreenElement) {
+      card.requestFullscreen().catch(err => alert('Erro a entrar em ecrã inteiro: ' + err.message));
+    } else {
+      document.exitFullscreen();
+    }
+  });
+
+  document.addEventListener('fullscreenchange', () => {
+    const card = el.querySelector('#dashCard');
+    if (!card) return;
+    const fsLabel = el.querySelector('#fsLabel');
+    if (document.fullscreenElement === card) {
+      card.style.background = '#fff';
+      card.style.padding = '20px';
+      card.style.overflow = 'auto';
+      if (fsLabel) fsLabel.textContent = 'Sair do ecrã inteiro';
+    } else {
+      card.style.background = '';
+      card.style.padding = '';
+      card.style.overflow = '';
+      if (fsLabel) fsLabel.textContent = 'Ecrã inteiro';
+    }
+  });
+
   async function load() {
     const picker = el.querySelector('#weekPicker').value;
     const dayIso = el.querySelector('#dayPicker').value;
@@ -122,6 +154,12 @@ export async function renderMain(el, ctx) {
     // Re-bind after re-render
     const toggleBtn = content.querySelector('#togglePastBtn');
     if (toggleBtn) toggleBtn.addEventListener('click', () => { pastCollapsed = !pastCollapsed; load(); });
+
+    // Scroll to right on initial render so today is visible
+    const scrollWrapper = content.querySelector('div[style*="overflow-x:auto"]');
+    if (scrollWrapper) {
+      setTimeout(() => { scrollWrapper.scrollLeft = scrollWrapper.scrollWidth; }, 50);
+    }
 
     // HC edit persistence
     content.querySelectorAll('[data-hc-linha]').forEach(input => {
@@ -336,7 +374,7 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
 // Shared table builder — 3 blocks side by side
 // ========================================================
 // Global state for dashboard UI
-let pastCollapsed = false;
+let pastCollapsed = true; // minimizado por defeito
 
 function buildTable({
   rows, pastWeeks, days, dayIso,
@@ -385,9 +423,9 @@ function buildTable({
   };
 
   const thStyleData = 'text-align:right;padding:6px;border-bottom:2px solid #e0e0e0;font-size:.8rem;font-weight:600';
-  const thStyleGroup = 'text-align:center;padding:6px;border-bottom:1px solid #e0e0e0;font-size:.75rem;color:#fff;font-weight:600;';
+  const thStyleGroup = 'text-align:center;padding:6px;border-bottom:1px solid #e0e0e0;font-size:.75rem;color:#495057;font-weight:600;';
   const tdStyle = 'padding:8px;text-align:right;border-bottom:1px solid #f0f0f3;font-size:.85rem';
-  const tdStyleTot = 'padding:10px;text-align:right;border-top:2px solid var(--color-blue);font-size:.9rem';
+  const tdStyleTot = 'padding:10px;text-align:right;border-top:2px solid rgba(0,122,255,0.3);font-size:.9rem';
 
   // Block 1: Past weeks (7 cols) + Acumulado (Plano, Real, %)
   // Block 2: Days of current week (7 cols) + Total plano + Total real + %
@@ -415,40 +453,40 @@ function buildTable({
             <th rowspan="3" style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7;position:sticky;left:0;z-index:2">Linha</th>
             <th rowspan="3" style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0;background:#f5f5f7">HC</th>
             ${gapHeadTop}
-            <th colspan="${block1Cols}" style="${thStyleGroup}background:#6c757d">${pastCollapsed ? collapseBtn : `Últimas ${pastWeeks.length} semanas ${collapseBtn}`}</th>
+            <th colspan="${block1Cols}" style="${thStyleGroup}background:rgba(108,117,125,0.15)">${pastCollapsed ? collapseBtn : `Últimas ${pastWeeks.length} semanas ${collapseBtn}`}</th>
             ${gapHeadTop}
-            <th colspan="${block2Cols}" style="${thStyleGroup}background:#007AFF">Semana atual</th>
+            <th colspan="${block2Cols}" style="${thStyleGroup}background:rgba(0,122,255,0.15)">Semana atual</th>
             ${gapHeadTop}
-            <th colspan="${block3Cols}" style="${thStyleGroup}background:#f57f17">Hoje (${todayLabel})</th>
+            <th colspan="${block3Cols}" style="${thStyleGroup}background:rgba(245,127,23,0.15)">Hoje (${todayLabel})</th>
             ${gapHeadTop}
-            <th colspan="${block4Cols}" style="${thStyleGroup}background:#34C759">Produto</th>
+            <th colspan="${block4Cols}" style="${thStyleGroup}background:rgba(52,199,89,0.15)">Produto</th>
             ${gapHeadTop}
-            <th colspan="${block5Cols}" style="${thStyleGroup}background:#d32f2f">Causas raíz</th>
+            <th colspan="${block5Cols}" style="${thStyleGroup}background:rgba(211,47,47,0.15)">Causas raíz</th>
           </tr>
           <tr style="background:#f5f5f7">
             ${gapHeadRow2}
             ${pastCollapsed ? `<th style="${thStyleData};background:#f5f5f7">&nbsp;</th>` : `
               ${pastWeeks.map(w => `<th style="${thStyleData}color:#6e6e73">${w.label}</th>`).join('')}
-              ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">Plano</th>`}
-              <th style="${thStyleData}background:#eef3fc">Real</th>
-              ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">%</th>`}
+              ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">Plano</th>`}
+              <th style="${thStyleData}background:rgba(0,122,255,0.06)">Real</th>
+              ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">%</th>`}
             `}
 
             ${gapHeadRow2}
             ${days.map(d => `<th style="${thStyleData}${d.todayFlag ? ';background:#fff3cd;color:#856404' : ''}">${d.label}<div style="font-size:.65rem;color:#6e6e73;font-weight:400">${d.dayNum}</div></th>`).join('')}
-            ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">Plano</th>`}
-            <th style="${thStyleData}background:#eef3fc">Real</th>
-            ${noPlan ? '' : `<th style="${thStyleData}background:#eef3fc">%</th>`}
+            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">Plano</th>`}
+            <th style="${thStyleData}background:rgba(0,122,255,0.06)">Real</th>
+            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(0,122,255,0.06)">%</th>`}
 
             ${gapHeadRow2}
-            ${noPlan ? '' : `<th style="${thStyleData}background:#fff4e0">Plano</th>`}
-            <th style="${thStyleData}background:#fff4e0">Real</th>
-            ${noPlan ? '' : `<th style="${thStyleData}background:#fff4e0">%</th>`}
+            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(245,127,23,0.08)">Plano</th>`}
+            <th style="${thStyleData}background:rgba(245,127,23,0.08)">Real</th>
+            ${noPlan ? '' : `<th style="${thStyleData}background:rgba(245,127,23,0.08)">%</th>`}
 
             ${gapHeadRow2}
             <th style="${thStyleData}background:#e8f5e9;text-align:left">Produto</th>
             ${gapHeadRow2}
-            <th style="${thStyleData}background:#ffebee;text-align:left">Desvio</th>
+            <th style="${thStyleData}background:rgba(211,47,47,0.06);text-align:left">Desvio</th>
           </tr>
         </thead>
         <tbody>
@@ -463,26 +501,26 @@ function buildTable({
             ${gap}
             ${pastCollapsed ? `<td style="${tdStyle};background:#f5f5f7;text-align:center;color:#adb5bd">···</td>` : `
               ${r.pastWeekly.map(c => valCell(c)).join('')}
-              ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.pastAccPlan)}</td>`}
-              ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:#f7faff;font-weight:600')}
+              ${noPlan ? '' : `<td style="${tdStyle};background:rgba(0,122,255,0.04)">${fmtPlan(r.pastAccPlan)}</td>`}
+              ${valCell({ real: r.pastAccReal, plano: r.pastAccPlan }, 'background:rgba(0,122,255,0.04);font-weight:600')}
               ${noPlan ? '' : pctCell(r.pastAccReal, r.pastAccPlan)}
             `}
 
             ${gap}
             ${r.dailyCells.map((c,i) => valCell(c)).join('')}
-            ${noPlan ? '' : `<td style="${tdStyle};background:#f7faff">${fmtPlan(r.weekPlan)}</td>`}
-            ${valCell({ real: r.weekReal, plano: r.weekPlan }, 'background:#f7faff;font-weight:600')}
+            ${noPlan ? '' : `<td style="${tdStyle};background:rgba(0,122,255,0.04)">${fmtPlan(r.weekPlan)}</td>`}
+            ${valCell({ real: r.weekReal, plano: r.weekPlan }, 'background:rgba(0,122,255,0.04);font-weight:600')}
             ${noPlan ? '' : pctCell(r.weekReal, r.weekPlan)}
 
             ${gap}
-            ${noPlan ? '' : `<td style="${tdStyle};background:#fff4e0">${fmtPlan(r.todayPlan)}</td>`}
-            ${valCell({ real: r.todayReal, plano: r.todayPlan }, 'background:#fff4e0;font-weight:600')}
+            ${noPlan ? '' : `<td style="${tdStyle};background:rgba(245,127,23,0.08)">${fmtPlan(r.todayPlan)}</td>`}
+            ${valCell({ real: r.todayReal, plano: r.todayPlan }, 'background:rgba(245,127,23,0.08);font-weight:600')}
             ${noPlan ? '' : pctCell(r.todayReal, r.todayPlan)}
 
             ${gap}
-            <td style="${tdStyle};text-align:left;background:#f1f8e9;font-size:.8rem;color:#33691e">${r.todayProduto || '—'}</td>
+            <td style="${tdStyle};text-align:left;background:rgba(52,199,89,0.08);font-size:.8rem;color:#33691e">${r.todayProduto || '—'}</td>
             ${gap}
-            <td style="${tdStyle};text-align:left;background:#ffebee;font-size:.78rem;color:#b71c1c;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
+            <td style="${tdStyle};text-align:left;background:rgba(211,47,47,0.06);font-size:.78rem;color:#b71c1c;max-width:260px;white-space:normal" title="${(r.todayCausas || '').replace(/"/g,'&quot;')}">${r.todayCausas || '—'}</td>
           </tr>`).join('')}
           <tr style="background:#e3eeff;font-weight:700">
             <td style="padding:10px;border-top:2px solid var(--color-blue);position:sticky;left:0;background:#e3eeff;z-index:1">${totalLabel}</td>
@@ -515,13 +553,13 @@ function buildTable({
         </tbody>
       </table>
     </div>
-      <div style="width:240px;flex-shrink:0;background:#fff;border:2px solid #f57f17;border-radius:12px;padding:12px;position:sticky;top:10px">
-        <h3 style="font-size:.85rem;margin-bottom:10px;color:#f57f17;text-align:center;font-weight:700">🚨 TOP 3<br>CAUSAS PARAGENS</h3>
-        <div id="top3Paragens" style="display:flex;flex-direction:column;gap:8px">
+      <div style="width:240px;flex-shrink:0;display:flex;flex-direction:column;align-self:stretch">
+        <h3 style="font-size:.78rem;margin:0 0 10px 0;color:#f57f17;text-align:center;font-weight:700;padding:8px;background:rgba(245,127,23,0.1);border-radius:8px;line-height:1.3">🚨 TOP 3<br>CAUSAS PARAGENS</h3>
+        <div id="top3Paragens" style="flex:1;display:flex;flex-direction:column;gap:10px">
           ${[0,1,2].map(i => `
-            <div style="padding:10px;border:1px solid #ffe0b2;background:#fff8e1;border-radius:6px;font-size:.82rem;min-height:50px;display:flex;align-items:center">
+            <div style="flex:1;padding:12px;background:rgba(245,127,23,0.06);border-radius:8px;font-size:.82rem;display:flex;align-items:center">
               ${(window.__editMode === true)
-                ? `<input type="text" value="${(paragens[i] || '').replace(/"/g,'&quot;')}" data-paragem-idx="${i}" data-paragem-key="${paragensKey}" placeholder="Causa ${i+1}..." style="width:100%;padding:4px 6px;border:1px solid #f57f17;border-radius:4px;font-size:.82rem;background:#fff">`
+                ? `<input type="text" value="${(paragens[i] || '').replace(/"/g,'&quot;')}" data-paragem-idx="${i}" data-paragem-key="${paragensKey}" placeholder="Causa ${i+1}..." style="width:100%;padding:6px 8px;border:1px solid rgba(245,127,23,0.3);border-radius:4px;font-size:.82rem;background:#fff">`
                 : `<span>${paragens[i] || '<span style="color:#999">—</span>'}</span>`}
             </div>
           `).join('')}
