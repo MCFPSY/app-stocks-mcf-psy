@@ -160,17 +160,18 @@ export async function renderMalotes(el, ctx) {
   }
 
   // Calcula sobra de retestagem e diz se é reaproveitável
+  // produto_stock = peça grande (fonte), produto_origem = peça pequena (o que se corta)
   function calcSobra(produto_stock, produto_origem, multiplicador) {
-    const pFinal = parseSKU(produto_stock);
-    const pOrigem = parseSKU(produto_origem);
-    if (!pFinal || !pOrigem || !multiplicador || multiplicador < 1) return null;
-    const sobraComp = pOrigem.comp - (multiplicador * pFinal.comp);
+    const pFonte = parseSKU(produto_stock);
+    const pCorte = parseSKU(produto_origem);
+    if (!pFonte || !pCorte || !multiplicador || multiplicador < 1) return null;
+    const sobraComp = pFonte.comp - (multiplicador * pCorte.comp);
     if (sobraComp <= 0) return { sobraComp: 0, reaproveitavel: false, sku: null };
-    const cs = `${pOrigem.larg}x${pOrigem.esp}`;
+    const cs = `${pFonte.larg}x${pFonte.esp}`;
     const altMin = alturasMenores[cs];
     const reaproveitavel = altMin != null && sobraComp >= altMin;
     const sobraCompArredondado = Math.floor(sobraComp / 100) * 100;
-    const sobraSKU = sobraCompArredondado > 0 ? `${sobraCompArredondado}x${pOrigem.larg}x${pOrigem.esp}` : null;
+    const sobraSKU = sobraCompArredondado > 0 ? `${sobraCompArredondado}x${pFonte.larg}x${pFonte.esp}` : null;
     return { sobraComp, reaproveitavel, sku: reaproveitavel ? sobraSKU : null, altMin };
   }
 
@@ -178,10 +179,10 @@ export async function renderMalotes(el, ctx) {
   const origemPool = mp.filter(p => p.categoria === 'tabuas' || p.categoria === 'tabuas_charriot');
 
   function origemOptionsHTML(produtoStock, selectedOrigem) {
-    const pFinal = findMp(produtoStock);
-    const minComp = pFinal ? pFinal.comprimento : 0;
+    const pFonte = findMp(produtoStock);
+    const maxComp = pFonte ? pFonte.comprimento : Infinity;
     return origemPool
-      .filter(p => p.comprimento > minComp)
+      .filter(p => p.comprimento < maxComp)
       .map(p => `<option value="${p.produto_stock}" ${p.produto_stock === selectedOrigem ? 'selected' : ''}>${p.produto_stock}</option>`)
       .join('');
   }
