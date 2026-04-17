@@ -13,11 +13,12 @@ import { addMovimento, cachePut, cacheGet } from '../../offline.js';
 // =========================================================
 let mpCache = null;
 let linhasCache = null;
+let alturasCache = null;  // { cross_section -> altura_menor_mm }
 
 async function loadMP() {
   if (mpCache) return mpCache;
   if (navigator.onLine) {
-    const { data, error } = await supabase.from('mp_standard').select('*').eq('ativo', true).order('produto_stock');
+    const { data, error } = await supabase.from('mp_standard').select('*').eq('ativo', true).order('comprimento').order('largura').order('espessura');
     if (!error && data) { mpCache = data; await cachePut('mp_standard', data); return data; }
   }
   const cached = await cacheGet('mp_standard');
@@ -35,6 +36,23 @@ async function loadLinhasMCF() {
   const cached = await cacheGet('mcf_linhas');
   linhasCache = cached || [];
   return linhasCache;
+}
+
+async function loadAlturasMenores() {
+  if (alturasCache) return alturasCache;
+  if (navigator.onLine) {
+    const { data } = await supabase.from('v_altura_menor').select('*');
+    if (data) {
+      const map = {};
+      for (const r of data) map[r.cross_section] = r.altura_menor_mm;
+      alturasCache = map;
+      await cachePut('v_altura_menor', map);
+      return map;
+    }
+  }
+  const cached = await cacheGet('v_altura_menor');
+  alturasCache = cached || {};
+  return alturasCache;
 }
 
 // =========================================================
@@ -67,7 +85,7 @@ function clearState(userId) {
 // =========================================================
 export async function renderMalotes(el, ctx) {
   el.innerHTML = `<div class="card"><h2>📦 Registos Produção MCF</h2><p class="sub">A carregar setup do turno...</p></div>`;
-  const [mp, linhas] = await Promise.all([loadMP(), loadLinhasMCF()]);
+  const [mp, linhas, alturasMenores] = await Promise.all([loadMP(), loadLinhasMCF(), loadAlturasMenores()]);
 
   // Filtra linhas ativas com categoria definida (as outras aparecem mas sem filtro de produto)
   const linhasOrdenadas = linhas;
@@ -85,7 +103,9 @@ export async function renderMalotes(el, ctx) {
     };
     // Pré-popular linhas com defaults
     for (const l of linhasOrdenadas) {
-      state.linhas[l.nome] = { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
+      const base = { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
+      if (l.sinal === '-') { base.produto_origem = ''; base.multiplicador = 1; }
+      state.linhas[l.nome] = base;
     }
     saveState(userId, state);
   }
@@ -93,12 +113,23 @@ export async function renderMalotes(el, ctx) {
   // Garantir que todas as linhas existem no state (caso tenham sido adicionadas depois)
   for (const l of linhasOrdenadas) {
     if (!state.linhas[l.nome]) {
-      state.linhas[l.nome] = { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
+      const base = { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
+      if (l.sinal === '-') { base.produto_origem = ''; base.multiplicador = 1; }
+      state.linhas[l.nome] = base;
+    }
+    // Migrar state antigo que não tinha estes campos
+    if (l.sinal === '-' && state.linhas[l.nome].produto_origem === undefined) {
+      state.linhas[l.nome].produto_origem = '';
+      state.linhas[l.nome].multiplicador = 1;
     }
   }
 
   // Helper: produtos disponíveis para a linha (por categoria)
   function produtosDaLinha(linha) {
+    // Linhas sinal='-' (PSY, Aprov-Sobras): mostram tábuas + tábuas charriot
+    if (linha.sinal === '-') {
+      return mp.filter(p => p.categoria === 'tabuas' || p.categoria === 'tabuas_charriot');
+    }
     if (!linha.categoria) return mp;
     return mp.filter(p => p.categoria === linha.categoria);
   }
@@ -118,6 +149,32 @@ export async function renderMalotes(el, ctx) {
   }
 
   // =========================================================
+  // Sobra helpers (para linhas sinal='-')
+  // =========================================================
+  // Parses "CxLxE" into { comp, larg, esp } (mm)
+  function parseSKU(sku) {
+    if (!sku) return null;
+    const parts = sku.split('x').map(Number);
+    if (parts.length !== 3 || parts.some(isNaN)) return null;
+    return { comp: parts[0], larg: parts[1], esp: parts[2] };
+  }
+
+  // Calcula sobra de retestagem e diz se é reaproveitável
+  function calcSobra(produto_stock, produto_origem, multiplicador) {
+    const pFinal = parseSKU(produto_stock);
+    const pOrigem = parseSKU(produto_origem);
+    if (!pFinal || !pOrigem || !multiplicador || multiplicador < 1) return null;
+    const sobraComp = pOrigem.comp - (multiplicador * pFinal.comp);
+    if (sobraComp <= 0) return { sobraComp: 0, reaproveitavel: false, sku: null };
+    const cs = `${pOrigem.larg}x${pOrigem.esp}`;
+    const altMin = alturasMenores[cs];
+    const reaproveitavel = altMin != null && sobraComp >= altMin;
+    const sobraCompArredondado = Math.floor(sobraComp / 100) * 100;
+    const sobraSKU = sobraCompArredondado > 0 ? `${sobraCompArredondado}x${pOrigem.larg}x${pOrigem.esp}` : null;
+    return { sobraComp, reaproveitavel, sku: reaproveitavel ? sobraSKU : null, altMin };
+  }
+
+  // =========================================================
   // Build HTML
   // =========================================================
   function rowHTML(linha) {
@@ -128,8 +185,9 @@ export async function renderMalotes(el, ctx) {
     const malotes = lineState.malotes || 0;
     const m3v = calcM3(lineState);
     const totPecas = malotes * (lineState.pecas_por_malote || 0);
+    const isMinus = linha.sinal === '-';
 
-    return `
+    let html = `
       <tr data-linha="${linha.nome}">
         <td style="padding:10px;font-weight:600;white-space:nowrap">${linha.nome}</td>
         <td style="padding:8px">
@@ -152,6 +210,44 @@ export async function renderMalotes(el, ctx) {
         <td style="padding:8px;text-align:center;font-weight:600;color:#495057" class="cell-m3">${m3v ? m3v.toFixed(3) + ' m³' : '-'}</td>
       </tr>
     `;
+
+    // Sub-row: produto origem + multiplicador + sobra preview (só linhas sinal='-')
+    if (isMinus) {
+      const origemVal = lineState.produto_origem || '';
+      const multVal = lineState.multiplicador || 1;
+      const sobra = calcSobra(lineState.produto_stock, origemVal, multVal);
+      let sobraLabel = '—';
+      if (sobra) {
+        if (sobra.sobraComp <= 0) sobraLabel = 'Sem sobra';
+        else if (sobra.reaproveitavel) sobraLabel = `<span style="color:#1f7a3a;font-weight:600">${sobra.sku}</span> (reaprov.)`;
+        else sobraLabel = `<span style="color:#c0392b;font-weight:600">${sobra.sobraComp}mm</span> &rarr; estilha`;
+      }
+      html += `
+        <tr data-linha-extra="${linha.nome}" style="background:#fef9f0;border-top:none">
+          <td></td>
+          <td colspan="5" style="padding:4px 8px 10px">
+            <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1;min-width:180px">
+                <label style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.5px">Produto origem</label>
+                <input type="text" class="field-origem" value="${origemVal}" placeholder="ex: 2500x90x14"
+                  list="mp-list"
+                  style="width:100%;padding:7px 10px;border:1px solid var(--color-border);border-radius:8px;font-size:.88rem">
+              </div>
+              <div style="width:90px">
+                <label style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.5px">Multiplicador</label>
+                <input type="number" class="field-mult" min="1" step="1" value="${multVal}"
+                  style="width:100%;padding:7px 10px;border:1px solid var(--color-border);border-radius:8px;font-size:.95rem;text-align:center;font-weight:600">
+              </div>
+              <div style="flex:1;min-width:140px;padding-bottom:4px" class="sobra-label">
+                <span style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.5px">Sobra: </span>
+                <span class="sobra-val" style="font-size:.88rem">${sobraLabel}</span>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+    return html;
   }
 
   el.innerHTML = `
@@ -205,6 +301,10 @@ export async function renderMalotes(el, ctx) {
         </table>
       </div>
 
+      <datalist id="mp-list">
+        ${mp.map(p => `<option value="${p.produto_stock}">`).join('')}
+      </datalist>
+
       <div class="btn-row" style="margin-top:20px">
         <button type="button" class="btn btn-danger btn-big" id="resetBtn">🗑 Reset</button>
         <button type="button" class="btn btn-success btn-big" id="submitBtn">✓ Submeter turno</button>
@@ -243,6 +343,25 @@ export async function renderMalotes(el, ctx) {
     const m3v = calcM3(ls);
     row.querySelector('.cell-m3').textContent = m3v ? m3v.toFixed(3) + ' m³' : '-';
     updateTotals();
+    updateSobraPreview(linhaNome);
+  }
+
+  function updateSobraPreview(linhaNome) {
+    const extraRow = body.querySelector(`tr[data-linha-extra="${CSS.escape(linhaNome)}"]`);
+    if (!extraRow) return;
+    const ls = state.linhas[linhaNome];
+    const sobra = calcSobra(ls.produto_stock, ls.produto_origem, ls.multiplicador);
+    const valEl = extraRow.querySelector('.sobra-val');
+    if (!valEl) return;
+    if (!sobra || (!ls.produto_stock && !ls.produto_origem)) {
+      valEl.innerHTML = '—';
+    } else if (sobra.sobraComp <= 0) {
+      valEl.innerHTML = 'Sem sobra';
+    } else if (sobra.reaproveitavel) {
+      valEl.innerHTML = `<span style="color:#1f7a3a;font-weight:600">${sobra.sku}</span> (reaprov.)`;
+    } else {
+      valEl.innerHTML = `<span style="color:#c0392b;font-weight:600">${sobra.sobraComp}mm</span> &rarr; estilha`;
+    }
   }
 
   function updateTotals() {
@@ -310,6 +429,26 @@ export async function renderMalotes(el, ctx) {
     });
   });
 
+  // Event listeners para sub-rows sinal='-' (produto_origem + multiplicador)
+  body.querySelectorAll('tr[data-linha-extra]').forEach(extraRow => {
+    const linhaNome = extraRow.dataset.linhaExtra;
+    const ls = state.linhas[linhaNome];
+    const origemInp = extraRow.querySelector('.field-origem');
+    const multInp = extraRow.querySelector('.field-mult');
+
+    origemInp.addEventListener('change', () => {
+      ls.produto_origem = origemInp.value.trim();
+      persist();
+      updateSobraPreview(linhaNome);
+    });
+    multInp.addEventListener('change', () => {
+      ls.multiplicador = Math.max(1, parseInt(multInp.value) || 1);
+      multInp.value = ls.multiplicador;
+      persist();
+      updateSobraPreview(linhaNome);
+    });
+  });
+
   // Date / turno
   el.querySelector('#dataReg').addEventListener('change', (e) => {
     state.data_registo = e.target.value || hoje;
@@ -344,7 +483,7 @@ export async function renderMalotes(el, ctx) {
       if (!p) continue;
       const vol1 = (p.comprimento / 1000) * (p.largura / 1000) * (p.espessura / 1000);
       const m3v = +(vol1 * m * np).toFixed(4);
-      entriesToSubmit.push({
+      const entry = {
         tipo: 'entrada_producao',
         empresa: 'MCF',
         produto_stock: p.produto_stock,
@@ -357,7 +496,11 @@ export async function renderMalotes(el, ctx) {
         data_registo: state.data_registo,
         linha: linhaNome,
         turno: state.turno,
-      });
+      };
+      // Linhas sinal='-': incluir produto_origem + multiplicador
+      if (ls.produto_origem) entry.produto_origem = ls.produto_origem;
+      if (ls.multiplicador && ls.multiplicador > 0) entry.multiplicador = ls.multiplicador;
+      entriesToSubmit.push(entry);
     }
 
     if (entriesToSubmit.length === 0) {
@@ -384,10 +527,11 @@ export async function renderMalotes(el, ctx) {
       'success'
     );
 
-    // Clear malotes counters but keep setup (produto + peças/malote)
+    // Clear malotes counters but keep setup (produto + peças/malote + origem/mult)
     for (const linhaNome of Object.keys(state.linhas)) {
       state.linhas[linhaNome].malotes = 0;
     }
+    // Nota: produto_origem + multiplicador NÃO são limpos — mantêm-se para o próximo turno
     persist();
     renderMalotes(el, ctx);
     window.dispatchEvent(new CustomEvent('sync-done'));
