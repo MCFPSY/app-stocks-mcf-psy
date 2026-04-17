@@ -188,6 +188,55 @@ export async function renderMain(el, ctx) {
   load();
 }
 
+// Combina linhas madeira 2ª (principal + aprov) num único row por turno
+// Ex.: "[+] Madeira de 2ª T1" + "[+] Madeira de 2ª Aprov T1" → "Madeira 2ª T1"
+function combineMadeira2(rows, turno) {
+  const nomePrinc = `[+] Madeira de 2ª ${turno}`;
+  const nomeAprov = `[+] Madeira de 2ª Aprov ${turno}`;
+  const idxPrinc = rows.findIndex(r => r.linha.nome === nomePrinc);
+  const idxAprov = rows.findIndex(r => r.linha.nome === nomeAprov);
+  if (idxPrinc < 0 && idxAprov < 0) return;
+
+  const rPrinc = idxPrinc >= 0 ? rows[idxPrinc] : null;
+  const rAprov = idxAprov >= 0 ? rows[idxAprov] : null;
+  const base = rPrinc || rAprov;
+  if (!base) return;
+
+  const n = base.pastWeekly.length;
+  const d = base.dailyCells.length;
+
+  const combined = {
+    linha: {
+      nome: `Madeira 2ª ${turno}`,
+      hc: (rPrinc?.linha.hc || 0) + (rAprov?.linha.hc || 0),
+      sinal: '+',
+      tipo_benchmark: 'principal',
+    },
+    pastWeekly: Array.from({ length: n }, (_, i) => ({
+      real: (rPrinc?.pastWeekly[i].real || 0) + (rAprov?.pastWeekly[i].real || 0),
+      plano: (rPrinc?.pastWeekly[i].plano || 0) + (rAprov?.pastWeekly[i].plano || 0),
+    })),
+    pastAccReal: (rPrinc?.pastAccReal || 0) + (rAprov?.pastAccReal || 0),
+    pastAccPlan: (rPrinc?.pastAccPlan || 0) + (rAprov?.pastAccPlan || 0),
+    dailyCells: Array.from({ length: d }, (_, i) => ({
+      real: (rPrinc?.dailyCells[i].real || 0) + (rAprov?.dailyCells[i].real || 0),
+      plano: (rPrinc?.dailyCells[i].plano || 0) + (rAprov?.dailyCells[i].plano || 0),
+    })),
+    weekReal: (rPrinc?.weekReal || 0) + (rAprov?.weekReal || 0),
+    weekPlan: (rPrinc?.weekPlan || 0) + (rAprov?.weekPlan || 0),
+    todayReal: (rPrinc?.todayReal || 0) + (rAprov?.todayReal || 0),
+    todayPlan: (rPrinc?.todayPlan || 0) + (rAprov?.todayPlan || 0),
+    todayProduto: rPrinc?.todayProduto || rAprov?.todayProduto || '',
+    todayCausas: [rPrinc?.todayCausas, rAprov?.todayCausas].filter(Boolean).join(' · '),
+  };
+
+  // Remover os 2 originais (do maior índice para o menor) e inserir o combinado
+  const targetIdx = Math.min(...[idxPrinc, idxAprov].filter(i => i >= 0));
+  const indicesToRemove = [idxPrinc, idxAprov].filter(i => i >= 0).sort((a, b) => b - a);
+  for (const i of indicesToRemove) rows.splice(i, 1);
+  rows.splice(targetIdx, 0, combined);
+}
+
 // ========================================================
 // MCF Dashboard
 // ========================================================
@@ -318,6 +367,10 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
       todayReal, todayPlan, todayProduto, todayCausas,
     };
   });
+
+  // Combinar madeira 2ª (principal + aproveitamentos) em linha única por turno
+  combineMadeira2(rows, 'T1');
+  combineMadeira2(rows, 'T3');
 
   // Totals (respecting +/- sinal) — each cell now has {real, plano}
   const sign = l => l.sinal === '-' ? -1 : 1;
