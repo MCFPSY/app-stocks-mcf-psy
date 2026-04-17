@@ -216,8 +216,8 @@ export async function renderMalotes(el, ctx) {
     const m3v = calcM3Entry(ls);
     const totPecas = malotes * (ls.pecas_por_malote || 0);
     const isSub = isSubLine(linha.nome);
-    const nameStyle = isSub ? 'padding:6px 10px 6px 30px;font-weight:500;font-size:.85rem;color:#666;white-space:nowrap' : 'padding:10px;font-weight:600;white-space:nowrap';
-    const rowStyle = isSub ? 'background:#fafafa' : '';
+    const nameStyle = isSub ? 'padding:4px 8px 10px 30px;font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.5px;vertical-align:top' : 'padding:10px;font-weight:600;white-space:nowrap';
+    const rowStyle = isSub ? 'background:#fef9f0' : '';
     const displayName = isSub ? subLineLabel(linha.nome) : linha.nome;
 
     return `
