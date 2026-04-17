@@ -14,6 +14,7 @@ import { addMovimento, cachePut, cacheGet } from '../../offline.js';
 let mpCache = null;
 let linhasCache = null;
 let alturasCache = null;  // { cross_section -> altura_menor_mm }
+let compatCache = null;   // { source_cs -> Set<"output_larg|output_esp"> }
 
 async function loadMP() {
   if (mpCache) return mpCache;
@@ -55,6 +56,37 @@ async function loadAlturasMenores() {
   return alturasCache;
 }
 
+async function loadCompat() {
+  if (compatCache) return compatCache;
+  if (navigator.onLine) {
+    const { data } = await supabase.from('rolaria_sobras_compat').select('cross_section, output_larg, output_esp');
+    if (data) {
+      // Map: source_cs -> Set<"Larg|Esp"> de outputs válidos
+      const map = {};
+      for (const r of data) {
+        if (!r.output_larg || !r.output_esp) continue;
+        if (!map[r.cross_section]) map[r.cross_section] = new Set();
+        map[r.cross_section].add(`${r.output_larg}|${r.output_esp}`);
+      }
+      // Serializar Sets para arrays (para cache)
+      const serialized = {};
+      for (const [k, v] of Object.entries(map)) serialized[k] = [...v];
+      compatCache = map;
+      await cachePut('rolaria_compat', serialized);
+      return map;
+    }
+  }
+  const cached = await cacheGet('rolaria_compat');
+  if (cached) {
+    const map = {};
+    for (const [k, v] of Object.entries(cached)) map[k] = new Set(v);
+    compatCache = map;
+  } else {
+    compatCache = {};
+  }
+  return compatCache;
+}
+
 // =========================================================
 // Estado (persistido em localStorage por utilizador)
 // =========================================================
@@ -85,7 +117,7 @@ function clearState(userId) {
 // =========================================================
 export async function renderMalotes(el, ctx) {
   el.innerHTML = `<div class="card"><h2>📦 Registos Produção MCF</h2><p class="sub">A carregar setup do turno...</p></div>`;
-  const [mp, linhas, alturasMenores] = await Promise.all([loadMP(), loadLinhasMCF(), loadAlturasMenores()]);
+  const [mp, linhas, alturasMenores, compatMap] = await Promise.all([loadMP(), loadLinhasMCF(), loadAlturasMenores(), loadCompat()]);
 
   // Filtra linhas ativas com categoria definida (as outras aparecem mas sem filtro de produto)
   const linhasOrdenadas = linhas;
@@ -178,11 +210,27 @@ export async function renderMalotes(el, ctx) {
   // Produtos candidatos a origem (tabuas + tabuas_charriot, comp > produto final)
   const origemPool = mp.filter(p => p.categoria === 'tabuas' || p.categoria === 'tabuas_charriot');
 
+  // Filtra produtos-corte válidos para uma dada fonte:
+  // 1. Comprimento do corte < comprimento da fonte
+  // 2. Cross-section compatível:
+  //    a) Se fonte LxE está na tabela de compat → só outputs com LxE marcados
+  //    b) Senão (regra base) → mesmo L, E <= fonte.E
   function origemOptionsHTML(produtoStock, selectedOrigem) {
     const pFonte = findMp(produtoStock);
-    const maxComp = pFonte ? pFonte.comprimento : Infinity;
+    if (!pFonte) return '';
+    const sourceCS = `${pFonte.largura}x${pFonte.espessura}`;
+    const validOutputCS = compatMap[sourceCS]; // Set<"L|E"> ou undefined
+
     return origemPool
-      .filter(p => p.comprimento < maxComp)
+      .filter(p => {
+        if (p.comprimento >= pFonte.comprimento) return false;
+        if (validOutputCS) {
+          // Exceções da matriz: outputs explicitamente marcados
+          return validOutputCS.has(`${p.largura}|${p.espessura}`);
+        }
+        // Regra base: mesmo L, E menor ou igual
+        return p.largura === pFonte.largura && p.espessura <= pFonte.espessura;
+      })
       .map(p => `<option value="${p.produto_stock}" ${p.produto_stock === selectedOrigem ? 'selected' : ''}>${p.produto_stock}</option>`)
       .join('');
   }

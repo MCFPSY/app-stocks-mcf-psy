@@ -64,6 +64,12 @@ for (let i = headerRowIdx + 1; i < data.length; i++) {
   const compNum = Number(comprimento);
   const isEspecial = (typeof especialTag === 'string' && especialTag.toLowerCase().includes('especi'));
 
+  // Parse LxE do produto-output (ex: "1200x95x18" -> larg=95, esp=18)
+  const skuStr = String(produto).trim();
+  const skuMatch = skuStr.match(/^\d+x(\d+)x(\d+)$/);
+  const outLarg = skuMatch ? Number(skuMatch[1]) : null;
+  const outEsp = skuMatch ? Number(skuMatch[2]) : null;
+
   for (const cs of crossSections) {
     const mark = row[cs.colIdx];
     if (typeof mark === 'string' && mark.trim().toLowerCase() === 'x') {
@@ -71,6 +77,8 @@ for (let i = headerRowIdx + 1; i < data.length; i++) {
         cross_section: cs.name,
         comprimento_mm: compNum,
         especial: isEspecial,
+        output_larg: outLarg,
+        output_esp: outEsp,
       });
     }
   }
@@ -82,7 +90,7 @@ console.log(`A inserir ${rows.length} entradas de compatibilidade...`);
 const seen = new Set();
 const unique = [];
 for (const r of rows) {
-  const k = `${r.cross_section}|${r.comprimento_mm}`;
+  const k = `${r.cross_section}|${r.comprimento_mm}|${r.output_larg}|${r.output_esp}`;
   if (seen.has(k)) continue;
   seen.add(k);
   unique.push(r);
