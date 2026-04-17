@@ -333,7 +333,7 @@ export async function renderMalotes(el, ctx) {
     return html;
   }
 
-  // Grupos de linhas para inserir separadores visuais entre eles
+  // Grupos de linhas para separadores visuais + cabeçalhos coloridos
   function groupOf(nome) {
     if (nome.startsWith('Linha principal') || nome === '[+] Madeira de 2ª T1' || nome === '[+] Madeira de 2ª T3') return 'principal';
     if (nome.includes('charriot')) return 'charriot';
@@ -342,8 +342,23 @@ export async function renderMalotes(el, ctx) {
     return 'other';
   }
 
+  const GROUP_META = {
+    principal:       { label: 'Linhas Principais',   color: '#0d6efd' },
+    charriot:        { label: 'Charriot',            color: '#6f42c1' },
+    aproveitamentos: { label: 'Aproveitamentos',     color: '#198754' },
+    retestagem:      { label: 'Retestagem',          color: '#dc3545' },
+    other:           { label: 'Outros',              color: '#6c757d' },
+  };
+
+  function groupHeaderRow(group) {
+    const meta = GROUP_META[group] || GROUP_META.other;
+    return `<tr class="group-header grp-${group}"><td colspan="6" style="padding:18px 14px 8px 12px;background:transparent;border:none">
+      <span style="display:inline-block;padding:3px 10px;background:${meta.color}15;color:${meta.color};border-left:4px solid ${meta.color};font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;border-radius:2px">${meta.label}</span>
+    </td></tr>`;
+  }
+
   function separatorRow() {
-    return `<tr class="group-separator"><td colspan="6" style="padding:0;height:12px;background:transparent;border:none"></td></tr>`;
+    return `<tr class="group-separator"><td colspan="6" style="padding:0;height:18px;background:transparent;border:none"></td></tr>`;
   }
 
   function rowHTML(linha) {
@@ -354,6 +369,14 @@ export async function renderMalotes(el, ctx) {
   // Main HTML
   // =========================================================
   el.innerHTML = `
+    <style>
+      #grelha tbody tr[data-grp="principal"] > td:first-child { box-shadow:inset 4px 0 0 ${GROUP_META.principal.color} }
+      #grelha tbody tr[data-grp="charriot"] > td:first-child { box-shadow:inset 4px 0 0 ${GROUP_META.charriot.color} }
+      #grelha tbody tr[data-grp="aproveitamentos"] > td:first-child { box-shadow:inset 4px 0 0 ${GROUP_META.aproveitamentos.color} }
+      #grelha tbody tr[data-grp="retestagem"] > td:first-child { box-shadow:inset 4px 0 0 ${GROUP_META.retestagem.color} }
+      #grelha tbody tr.group-separator > td,
+      #grelha tbody tr.group-header > td { box-shadow:none !important }
+    </style>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <h2 style="margin:0">📦 Registos Produção MCF</h2>
@@ -389,8 +412,14 @@ export async function renderMalotes(el, ctx) {
             let prevGroup = null;
             for (const l of linhasOrdenadas) {
               const g = groupOf(l.nome);
-              if (prevGroup !== null && g !== prevGroup) out += separatorRow();
-              out += rowHTML(l);
+              if (g !== prevGroup) {
+                if (prevGroup !== null) out += separatorRow();
+                out += groupHeaderRow(g);
+              }
+              // Tag each data-* row with data-grp="<group>" for CSS left-edge color
+              const tagged = rowHTML(l).replace(/<tr (data-linha|data-minus-linha|data-minus-extra|data-minus-add)=/g,
+                `<tr data-grp="${g}" $1=`);
+              out += tagged;
               prevGroup = g;
             }
             return out;
