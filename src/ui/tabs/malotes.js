@@ -192,46 +192,82 @@ export async function renderMalotes(el, ctx) {
   }
 
   // Calcula sobra de retestagem e diz se é reaproveitável
-  // produto_stock = peça grande (fonte), produto_origem = peça pequena (o que se corta)
+  // produto_stock = OUTPUT (peça pequena produzida), produto_origem = SOURCE (peça grande de onde vem)
   function calcSobra(produto_stock, produto_origem, multiplicador) {
-    const pFonte = parseSKU(produto_stock);
-    const pCorte = parseSKU(produto_origem);
-    if (!pFonte || !pCorte || !multiplicador || multiplicador < 1) return null;
-    const sobraComp = pFonte.comp - (multiplicador * pCorte.comp);
+    const pOutput = parseSKU(produto_stock);
+    const pSource = parseSKU(produto_origem);
+    if (!pOutput || !pSource || !multiplicador || multiplicador < 1) return null;
+    const sobraComp = pSource.comp - (multiplicador * pOutput.comp);
     if (sobraComp <= 0) return { sobraComp: 0, reaproveitavel: false, sku: null };
-    const cs = `${pFonte.larg}x${pFonte.esp}`;
+    const cs = `${pSource.larg}x${pSource.esp}`;
     const altMin = alturasMenores[cs];
     const reaproveitavel = altMin != null && sobraComp >= altMin;
     const sobraCompArredondado = Math.floor(sobraComp / 100) * 100;
-    const sobraSKU = sobraCompArredondado > 0 ? `${sobraCompArredondado}x${pFonte.larg}x${pFonte.esp}` : null;
+    const sobraSKU = sobraCompArredondado > 0 ? `${sobraCompArredondado}x${pSource.larg}x${pSource.esp}` : null;
     return { sobraComp, reaproveitavel, sku: reaproveitavel ? sobraSKU : null, altMin };
   }
 
-  // Produtos candidatos a origem (tabuas + tabuas_charriot, comp > produto final)
-  const origemPool = mp.filter(p => p.categoria === 'tabuas' || p.categoria === 'tabuas_charriot');
+  // Pool de produtos para linhas sinal='-' (tabuas + tabuas_charriot)
+  const minusPool = mp.filter(p => p.categoria === 'tabuas' || p.categoria === 'tabuas_charriot');
 
-  // Filtra produtos-corte válidos para uma dada fonte:
-  // 1. Comprimento do corte < comprimento da fonte
-  // 2. Cross-section compatível:
-  //    a) Se fonte LxE está na tabela de compat → só outputs com LxE marcados
-  //    b) Senão (regra base) → mesmo L, E <= fonte.E
+  // Compat maps:
+  //   fwdCompat: source_cs → Set<"outL|outE">  (dado fonte, que outputs posso fazer?)
+  //   revCompat: "outL|outE" → Set<source_cs>   (dado output, que fontes servem?)
+  const fwdCompat = compatMap; // já carregado
+  const revCompat = {};
+  for (const [srcCS, outputs] of Object.entries(fwdCompat)) {
+    for (const outLE of outputs) {
+      if (!revCompat[outLE]) revCompat[outLE] = new Set();
+      revCompat[outLE].add(srcCS);
+    }
+  }
+
+  // Cross-section compatível?
+  function isCompatSource(sourceLarg, sourceEsp, outputLarg, outputEsp) {
+    const outKey = `${outputLarg}|${outputEsp}`;
+    const validSources = revCompat[outKey];
+    if (validSources) {
+      // Output está na matriz: só fontes explicitamente marcadas
+      return validSources.has(`${sourceLarg}x${sourceEsp}`);
+    }
+    // Regra base: mesmo L, E da fonte >= E do output
+    return sourceLarg === outputLarg && sourceEsp >= outputEsp;
+  }
+
+  function isCompatOutput(sourceLarg, sourceEsp, outputLarg, outputEsp) {
+    const srcKey = `${sourceLarg}x${sourceEsp}`;
+    const validOutputs = fwdCompat[srcKey];
+    if (validOutputs) {
+      // Fonte está na matriz: só outputs explicitamente marcados
+      return validOutputs.has(`${outputLarg}|${outputEsp}`);
+    }
+    // Regra base: mesmo L, E do output <= E da fonte
+    return outputLarg === sourceLarg && outputEsp <= sourceEsp;
+  }
+
+  // Dropdown "Produto origem" (fonte, peça grande) filtrado pelo output selecionado
   function origemOptionsHTML(produtoStock, selectedOrigem) {
-    const pFonte = findMp(produtoStock);
-    if (!pFonte) return '';
-    const sourceCS = `${pFonte.largura}x${pFonte.espessura}`;
-    const validOutputCS = compatMap[sourceCS]; // Set<"L|E"> ou undefined
-
-    return origemPool
+    const pOut = findMp(produtoStock);
+    return minusPool
       .filter(p => {
-        if (p.comprimento >= pFonte.comprimento) return false;
-        if (validOutputCS) {
-          // Exceções da matriz: outputs explicitamente marcados
-          return validOutputCS.has(`${p.largura}|${p.espessura}`);
-        }
-        // Regra base: mesmo L, E menor ou igual
-        return p.largura === pFonte.largura && p.espessura <= pFonte.espessura;
+        if (pOut && p.comprimento <= pOut.comprimento) return false;
+        if (pOut) return isCompatSource(p.largura, p.espessura, pOut.largura, pOut.espessura);
+        return true; // sem output selecionado → mostra tudo
       })
       .map(p => `<option value="${p.produto_stock}" ${p.produto_stock === selectedOrigem ? 'selected' : ''}>${p.produto_stock}</option>`)
+      .join('');
+  }
+
+  // Dropdown "Produto" (output, peça pequena) filtrado pela origem selecionada
+  function produtoOptionsHTML(linha, origemStock, selectedProd) {
+    const pSrc = findMp(origemStock);
+    return minusPool
+      .filter(p => {
+        if (pSrc && p.comprimento >= pSrc.comprimento) return false;
+        if (pSrc) return isCompatOutput(pSrc.largura, pSrc.espessura, p.largura, p.espessura);
+        return true; // sem origem selecionada → mostra tudo
+      })
+      .map(p => `<option value="${p.produto_stock}" ${p.produto_stock === selectedProd ? 'selected' : ''}>${p.produto_conversao && p.produto_conversao !== p.produto_stock ? `${p.produto_conversao} → ${p.produto_stock}` : p.produto_stock}</option>`)
       .join('');
   }
 
@@ -241,8 +277,16 @@ export async function renderMalotes(el, ctx) {
     const sel = extraRow.querySelector('.field-origem');
     if (!sel) return;
     const ls = state.linhas[linhaNome];
-    const opts = origemOptionsHTML(ls.produto_stock, ls.produto_origem);
-    sel.innerHTML = `<option value="">— Escolher origem —</option>${opts}`;
+    sel.innerHTML = `<option value="">— Escolher origem —</option>${origemOptionsHTML(ls.produto_stock, ls.produto_origem)}`;
+  }
+
+  function rebuildProdutoSelect(linhaNome, linha) {
+    const row = body?.querySelector(`tr[data-linha="${CSS.escape(linhaNome)}"]`);
+    if (!row || linha.sinal !== '-') return;
+    const sel = row.querySelector('.field-prod');
+    if (!sel) return;
+    const ls = state.linhas[linhaNome];
+    sel.innerHTML = `<option value="">— Escolher produto —</option>${produtoOptionsHTML(linha, ls.produto_origem, ls.produto_stock)}`;
   }
 
   // =========================================================
@@ -499,6 +543,9 @@ export async function renderMalotes(el, ctx) {
     });
   });
 
+  // Lookup nome -> linha object (para rebuildProdutoSelect)
+  const linhaByNome = Object.fromEntries(linhasOrdenadas.map(l => [l.nome, l]));
+
   // Event listeners para sub-rows sinal='-' (produto_origem + multiplicador)
   body.querySelectorAll('tr[data-linha-extra]').forEach(extraRow => {
     const linhaNome = extraRow.dataset.linhaExtra;
@@ -510,6 +557,8 @@ export async function renderMalotes(el, ctx) {
       ls.produto_origem = origemInp.value;
       persist();
       updateSobraPreview(linhaNome);
+      // Bidirecional: rebuild produto dropdown com base na origem selecionada
+      rebuildProdutoSelect(linhaNome, linhaByNome[linhaNome]);
     });
     multInp.addEventListener('change', () => {
       ls.multiplicador = Math.max(1, parseInt(multInp.value) || 1);
