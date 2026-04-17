@@ -265,9 +265,13 @@ export async function renderMalotes(el, ctx) {
       }
 
       // Product row
+      const nameCell = idx === 0
+        ? `<td style="padding:10px;font-weight:600;white-space:nowrap;vertical-align:top">${linha.nome}</td>`
+        : `<td style="padding:10px"></td>`;
+      const rowBorder = idx > 0 ? 'border-top:1px dashed #ddd' : '';
       html += `
-        <tr data-minus-linha="${linha.nome}" data-eidx="${idx}" ${idx === 0 ? '' : 'style="border-top:1px dashed #ddd"'}>
-          ${idx === 0 ? `<td style="padding:10px;font-weight:600;white-space:nowrap;vertical-align:top" rowspan="${entries.length * 2 + 1}">${linha.nome}</td>` : ''}
+        <tr data-minus-linha="${linha.nome}" data-eidx="${idx}" style="${rowBorder}">
+          ${nameCell}
           <td style="padding:8px">
             <select class="field-prod-m" style="width:100%;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
               <option value="">— Escolher produto —</option>
@@ -294,6 +298,7 @@ export async function renderMalotes(el, ctx) {
       // Origem sub-row
       html += `
         <tr data-minus-extra="${linha.nome}" data-eidx="${idx}" style="background:#fef9f0">
+          <td></td>
           <td colspan="5" style="padding:4px 8px 10px">
             <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
               <div style="flex:1;min-width:180px">
@@ -316,15 +321,29 @@ export async function renderMalotes(el, ctx) {
         </tr>`;
     }
 
-    // Add-entry button
+    // Add-entry button row
     html += `
       <tr data-minus-add="${linha.nome}" style="background:#fef9f0">
-        <td colspan="5" style="padding:6px 8px">
+        <td></td>
+        <td colspan="5" style="padding:6px 8px 10px">
           <button type="button" class="btn-add-entry" style="padding:6px 16px;background:#fff;border:2px dashed var(--color-blue);color:var(--color-blue);border-radius:8px;font-size:.85rem;cursor:pointer;font-weight:600">+ Adicionar produto</button>
         </td>
       </tr>`;
 
     return html;
+  }
+
+  // Grupos de linhas para inserir separadores visuais entre eles
+  function groupOf(nome) {
+    if (nome.startsWith('Linha principal') || nome === '[+] Madeira de 2ª T1' || nome === '[+] Madeira de 2ª T3') return 'principal';
+    if (nome.includes('charriot')) return 'charriot';
+    if (nome.startsWith('Linha aproveitamentos') || nome.startsWith('[+] Madeira de 2ª Aprov')) return 'aproveitamentos';
+    if (nome.startsWith('[-]')) return 'retestagem';
+    return 'other';
+  }
+
+  function separatorRow() {
+    return `<tr class="group-separator"><td colspan="6" style="padding:0;height:12px;background:transparent;border:none"></td></tr>`;
   }
 
   function rowHTML(linha) {
@@ -365,7 +384,17 @@ export async function renderMalotes(el, ctx) {
             <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0">Total peças</th>
             <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0">m³</th>
           </tr></thead>
-          <tbody id="grelhaBody">${linhasOrdenadas.map(rowHTML).join('')}</tbody>
+          <tbody id="grelhaBody">${(() => {
+            let out = '';
+            let prevGroup = null;
+            for (const l of linhasOrdenadas) {
+              const g = groupOf(l.nome);
+              if (prevGroup !== null && g !== prevGroup) out += separatorRow();
+              out += rowHTML(l);
+              prevGroup = g;
+            }
+            return out;
+          })()}</tbody>
           <tfoot><tr style="background:#f0f7ff;font-weight:700">
             <td colspan="3" style="padding:12px;border-top:2px solid var(--color-blue)">Total do turno</td>
             <td style="padding:12px;text-align:center;border-top:2px solid var(--color-blue)" id="totMalotes">0</td>
