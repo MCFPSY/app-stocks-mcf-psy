@@ -174,6 +174,28 @@ export async function renderMalotes(el, ctx) {
     return { sobraComp, reaproveitavel, sku: reaproveitavel ? sobraSKU : null, altMin };
   }
 
+  // Produtos candidatos a origem (tabuas + tabuas_charriot, comp > produto final)
+  const origemPool = mp.filter(p => p.categoria === 'tabuas' || p.categoria === 'tabuas_charriot');
+
+  function origemOptionsHTML(produtoStock, selectedOrigem) {
+    const pFinal = findMp(produtoStock);
+    const minComp = pFinal ? pFinal.comprimento : 0;
+    return origemPool
+      .filter(p => p.comprimento > minComp)
+      .map(p => `<option value="${p.produto_stock}" ${p.produto_stock === selectedOrigem ? 'selected' : ''}>${p.produto_stock}</option>`)
+      .join('');
+  }
+
+  function rebuildOrigemSelect(linhaNome) {
+    const extraRow = body?.querySelector(`tr[data-linha-extra="${CSS.escape(linhaNome)}"]`);
+    if (!extraRow) return;
+    const sel = extraRow.querySelector('.field-origem');
+    if (!sel) return;
+    const ls = state.linhas[linhaNome];
+    const opts = origemOptionsHTML(ls.produto_stock, ls.produto_origem);
+    sel.innerHTML = `<option value="">— Escolher origem —</option>${opts}`;
+  }
+
   // =========================================================
   // Build HTML
   // =========================================================
@@ -222,6 +244,7 @@ export async function renderMalotes(el, ctx) {
         else if (sobra.reaproveitavel) sobraLabel = `<span style="color:#1f7a3a;font-weight:600">${sobra.sku}</span> (reaprov.)`;
         else sobraLabel = `<span style="color:#c0392b;font-weight:600">${sobra.sobraComp}mm</span> &rarr; estilha`;
       }
+      const origemOpts = origemOptionsHTML(lineState.produto_stock, origemVal);
       html += `
         <tr data-linha-extra="${linha.nome}" style="background:#fef9f0;border-top:none">
           <td></td>
@@ -229,9 +252,10 @@ export async function renderMalotes(el, ctx) {
             <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
               <div style="flex:1;min-width:180px">
                 <label style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.5px">Produto origem</label>
-                <input type="text" class="field-origem" value="${origemVal}" placeholder="ex: 2500x90x14"
-                  list="mp-list"
-                  style="width:100%;padding:7px 10px;border:1px solid var(--color-border);border-radius:8px;font-size:.88rem">
+                <select class="field-origem" style="width:100%;padding:7px 10px;border:1px solid var(--color-border);border-radius:8px;font-size:.88rem">
+                  <option value="">— Escolher origem —</option>
+                  ${origemOpts}
+                </select>
               </div>
               <div style="width:90px">
                 <label style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.5px">Multiplicador</label>
@@ -300,10 +324,6 @@ export async function renderMalotes(el, ctx) {
           </tfoot>
         </table>
       </div>
-
-      <datalist id="mp-list">
-        ${mp.map(p => `<option value="${p.produto_stock}">`).join('')}
-      </datalist>
 
       <div class="btn-row" style="margin-top:20px">
         <button type="button" class="btn btn-danger btn-big" id="resetBtn">🗑 Reset</button>
@@ -397,6 +417,7 @@ export async function renderMalotes(el, ctx) {
       }
       persist();
       updateRowDerived(linhaNome);
+      rebuildOrigemSelect(linhaNome);
     });
 
     // Peças/malote change
@@ -437,7 +458,7 @@ export async function renderMalotes(el, ctx) {
     const multInp = extraRow.querySelector('.field-mult');
 
     origemInp.addEventListener('change', () => {
-      ls.produto_origem = origemInp.value.trim();
+      ls.produto_origem = origemInp.value;
       persist();
       updateSobraPreview(linhaNome);
     });
