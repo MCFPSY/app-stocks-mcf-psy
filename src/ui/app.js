@@ -9,6 +9,7 @@ import { renderAjustes } from './tabs/ajustes.js';
 import { renderPSY } from './tabs/psy.js';
 import { renderMain } from './tabs/main.js';
 import { renderConsumo } from './tabs/consumo.js';
+import { renderPivot } from './tabs/pivot.js';
 import { canViewTab } from '../permissions.js';
 import { getPendingCount, sync } from '../offline.js';
 
@@ -22,6 +23,7 @@ const TABS = [
   { id: 'pedidos',    label: 'Pedidos',           icon: '📋', render: renderPedidos },
   { id: 'duvidas',    label: 'Dúvidas',           icon: '❓', render: renderDuvidas },
   { id: 'consumo',    label: 'Consumo Rolaria',   icon: '🪵', render: renderConsumo },
+  { id: 'pivot',      label: 'Análise',           icon: '📊', render: renderPivot },
   { id: 'ajustes',    label: 'Ajustes',           icon: '⚙️', render: renderAjustes },
 ];
 

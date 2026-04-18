@@ -8,9 +8,9 @@ import { supabase } from './supabase.js';
 
 export const PERMS = {
   operador:       { tabs: ['malotes','psy','transfer','inventario','pedidos'], write: ['movimentos','pedidos','psy_producao'] },
-  contabilista:   { tabs: ['main','inventario','movimentos','pedidos','consumo'],          write: ['contabilizacao','pedidos'] },
-  admin_producao: { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas','consumo'], write: ['movimentos','pedidos','duvidas','psy_producao'] },
-  admin:          { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas','consumo','ajustes'], write: ['*'] },
+  contabilista:   { tabs: ['main','inventario','movimentos','pedidos','consumo','pivot'],          write: ['contabilizacao','pedidos'] },
+  admin_producao: { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas','consumo','pivot'], write: ['movimentos','pedidos','duvidas','psy_producao'] },
+  admin:          { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas','consumo','pivot','ajustes'], write: ['*'] },
 };
 
 // Custom per-user permissions loaded from BD at login
