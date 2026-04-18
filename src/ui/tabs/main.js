@@ -188,53 +188,63 @@ export async function renderMain(el, ctx) {
   load();
 }
 
-// Combina linhas madeira 2ª (principal + aprov) num único row por turno
-// Ex.: "[+] Madeira de 2ª T1" + "[+] Madeira de 2ª Aprov T1" → "Madeira 2ª T1"
-function combineMadeira2(rows, turno) {
-  const nomePrinc = `[+] Madeira de 2ª ${turno}`;
-  const nomeAprov = `[+] Madeira de 2ª Aprov ${turno}`;
-  const idxPrinc = rows.findIndex(r => r.linha.nome === nomePrinc);
-  const idxAprov = rows.findIndex(r => r.linha.nome === nomeAprov);
-  if (idxPrinc < 0 && idxAprov < 0) return;
+// Combina N linhas num único row, removendo as originais e inserindo o combinado
+// na posição da menor. Ignora nomes inexistentes.
+function combineRowsInto(rows, sourceNames, outLinhaMeta) {
+  const indices = sourceNames.map(n => rows.findIndex(r => r.linha.nome === n)).filter(i => i >= 0);
+  if (indices.length === 0) return;
 
-  const rPrinc = idxPrinc >= 0 ? rows[idxPrinc] : null;
-  const rAprov = idxAprov >= 0 ? rows[idxAprov] : null;
-  const base = rPrinc || rAprov;
-  if (!base) return;
-
+  const sources = indices.map(i => rows[i]);
+  const base = sources[0];
   const n = base.pastWeekly.length;
   const d = base.dailyCells.length;
 
+  const sumHc = sources.reduce((s, r) => s + (r.linha.hc || 0), 0);
   const combined = {
-    linha: {
-      nome: `Madeira 2ª ${turno}`,
-      hc: (rPrinc?.linha.hc || 0) + (rAprov?.linha.hc || 0),
-      sinal: '+',
-      tipo_benchmark: 'principal',
-    },
+    linha: { nome: outLinhaMeta.nome, hc: sumHc, sinal: '+', tipo_benchmark: outLinhaMeta.tipo_benchmark || 'principal' },
     pastWeekly: Array.from({ length: n }, (_, i) => ({
-      real: (rPrinc?.pastWeekly[i].real || 0) + (rAprov?.pastWeekly[i].real || 0),
-      plano: (rPrinc?.pastWeekly[i].plano || 0) + (rAprov?.pastWeekly[i].plano || 0),
+      real: sources.reduce((s, r) => s + (r.pastWeekly[i]?.real || 0), 0),
+      plano: sources.reduce((s, r) => s + (r.pastWeekly[i]?.plano || 0), 0),
     })),
-    pastAccReal: (rPrinc?.pastAccReal || 0) + (rAprov?.pastAccReal || 0),
-    pastAccPlan: (rPrinc?.pastAccPlan || 0) + (rAprov?.pastAccPlan || 0),
+    pastAccReal: sources.reduce((s, r) => s + (r.pastAccReal || 0), 0),
+    pastAccPlan: sources.reduce((s, r) => s + (r.pastAccPlan || 0), 0),
     dailyCells: Array.from({ length: d }, (_, i) => ({
-      real: (rPrinc?.dailyCells[i].real || 0) + (rAprov?.dailyCells[i].real || 0),
-      plano: (rPrinc?.dailyCells[i].plano || 0) + (rAprov?.dailyCells[i].plano || 0),
+      real: sources.reduce((s, r) => s + (r.dailyCells[i]?.real || 0), 0),
+      plano: sources.reduce((s, r) => s + (r.dailyCells[i]?.plano || 0), 0),
     })),
-    weekReal: (rPrinc?.weekReal || 0) + (rAprov?.weekReal || 0),
-    weekPlan: (rPrinc?.weekPlan || 0) + (rAprov?.weekPlan || 0),
-    todayReal: (rPrinc?.todayReal || 0) + (rAprov?.todayReal || 0),
-    todayPlan: (rPrinc?.todayPlan || 0) + (rAprov?.todayPlan || 0),
-    todayProduto: rPrinc?.todayProduto || rAprov?.todayProduto || '',
-    todayCausas: [rPrinc?.todayCausas, rAprov?.todayCausas].filter(Boolean).join(' · '),
+    weekReal: sources.reduce((s, r) => s + (r.weekReal || 0), 0),
+    weekPlan: sources.reduce((s, r) => s + (r.weekPlan || 0), 0),
+    todayReal: sources.reduce((s, r) => s + (r.todayReal || 0), 0),
+    todayPlan: sources.reduce((s, r) => s + (r.todayPlan || 0), 0),
+    todayProduto: sources.map(r => r.todayProduto).filter(Boolean)[0] || '',
+    todayCausas: sources.map(r => r.todayCausas).filter(Boolean).join(' · '),
   };
 
-  // Remover os 2 originais (do maior índice para o menor) e inserir o combinado
-  const targetIdx = Math.min(...[idxPrinc, idxAprov].filter(i => i >= 0));
-  const indicesToRemove = [idxPrinc, idxAprov].filter(i => i >= 0).sort((a, b) => b - a);
-  for (const i of indicesToRemove) rows.splice(i, 1);
+  const targetIdx = Math.min(...indices);
+  const sortedDesc = [...indices].sort((a, b) => b - a);
+  for (const i of sortedDesc) rows.splice(i, 1);
   rows.splice(targetIdx, 0, combined);
+}
+
+// Combina madeira 2ª: principal + aprov + aprov (B). T2(B) vai para T1.
+function combineMadeira2(rows, turno) {
+  const sources = [
+    `[+] Madeira de 2ª ${turno}`,
+    `[+] Madeira de 2ª Aprov ${turno}`,
+    `[+] Madeira de 2ª Aprov ${turno} (B)`,
+  ];
+  if (turno === 'T1') sources.push('[+] Madeira de 2ª Aprov T2 (B)');
+  combineRowsInto(rows, sources, { nome: `Madeira 2ª ${turno}`, tipo_benchmark: 'principal' });
+}
+
+// Combina aproveitamentos: regular + (B). T2(B) vai para T1.
+function combineAproveitamentos(rows, turno) {
+  const sources = [
+    `Linha aproveitamentos ${turno}`,
+    `Linha aproveitamentos ${turno} (B)`,
+  ];
+  if (turno === 'T1') sources.push('Linha aproveitamentos T2 (B)');
+  combineRowsInto(rows, sources, { nome: `Linha aproveitamentos ${turno}`, tipo_benchmark: 'aproveitamentos' });
 }
 
 // ========================================================
@@ -368,7 +378,9 @@ async function renderMCF(el, pastWeeks, currentWeek, days, dayIso) {
     };
   });
 
-  // Combinar madeira 2ª (principal + aproveitamentos) em linha única por turno
+  // Combinar madeira 2ª e aproveitamentos (regular + (B)) em linha única por turno
+  combineAproveitamentos(rows, 'T1');
+  combineAproveitamentos(rows, 'T3');
   combineMadeira2(rows, 'T1');
   combineMadeira2(rows, 'T3');
 

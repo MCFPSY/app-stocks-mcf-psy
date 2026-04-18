@@ -113,7 +113,7 @@ export async function renderConsumo(el, ctx) {
       return gamas.find(g => g.comp_rolaria_mm === comp && g.categoria === categoria) || null;
     }
 
-    // Collect aproveitamentos espessura per turno
+    // Collect aproveitamentos espessura per turno (regular + (B))
     for (const m of movs) {
       const linha = linhaByNome[m.linha];
       if (!linha) continue;
@@ -123,6 +123,8 @@ export async function renderConsumo(el, ctx) {
       }
     }
 
+    const isBLine = (nome) => / \(B\)$/.test(nome);
+
     // Pass 1: principal + charriot [B]
     for (const m of movs) {
       const linha = linhaByNome[m.linha];
@@ -130,7 +132,7 @@ export async function renderConsumo(el, ctx) {
       const p = mpMap[m.produto_stock];
       const tk = turnoKey(m);
 
-      if (linha.tipo_benchmark === 'principal') {
+      if (linha.tipo_benchmark === 'principal' && !isBLine(linha.nome)) {
         if (!p) { movGamas.set(m.id, { gama: null, tons: 0, reason: 'Produto não encontrado' }); continue; }
         const costEsp = aprovProdPerTurno.get(tk) || null;
         const gama = lookupMatrizPrincipal(p.comprimento, p.largura, p.espessura, costEsp);
@@ -144,6 +146,24 @@ export async function renderConsumo(el, ctx) {
       }
     }
 
+    // Weekly fallback gama: produto mais consumido (m³) pela linha principal
+    // regular na semana. Usado quando aprov (B) não tem principal mesmo turno.
+    function computeWeeklyFallback() {
+      const byProd = new Map();
+      for (const m of movs) {
+        const linha = linhaByNome[m.linha];
+        if (!linha || linha.tipo_benchmark !== 'principal' || isBLine(linha.nome)) continue;
+        if (!m.produto_stock) continue;
+        byProd.set(m.produto_stock, (byProd.get(m.produto_stock) || 0) + Number(m.m3 || 0));
+      }
+      if (byProd.size === 0) return null;
+      const topProd = [...byProd.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const p = mpMap[topProd];
+      if (!p) return null;
+      return lookupMatrizPrincipal(p.comprimento, p.largura, p.espessura, null);
+    }
+    const weeklyFallbackGama = computeWeeklyFallback();
+
     // Pass 2: inherited gamas (aproveitamentos, duplos, tábuas) + PSY/sobras
     for (const m of movs) {
       if (movGamas.has(m.id)) continue;
@@ -152,14 +172,25 @@ export async function renderConsumo(el, ctx) {
       const tk = turnoKey(m);
 
       if (linha.sinal === '-') {
-        // PSY, Aprov-Sobras: não consomem rolaria
         movGamas.set(m.id, { gama: null, tons: 0, reason: 'Retestagem (sem consumo rolaria)' });
       } else if (linha.tipo_benchmark === 'aproveitamentos') {
-        // Herda da principal do mesmo turno
-        const gama = principalGamaPerTurno.get(tk) || null;
-        movGamas.set(m.id, { gama, tons: m.m3 * ratio, reason: gama ? 'Herdado da principal' : 'Sem principal no turno' });
+        if (isBLine(linha.nome)) {
+          // (B): T2 nunca tem principal. T1/T3 → tentar principal mesmo turno, senão fallback semanal
+          let gama = null, reason = '';
+          if (m.turno === 'T2') {
+            gama = weeklyFallbackGama;
+            reason = gama ? 'Fallback semanal (principal + consumida)' : 'Sem principal na semana';
+          } else {
+            gama = principalGamaPerTurno.get(tk) || weeklyFallbackGama;
+            reason = principalGamaPerTurno.get(tk) ? 'Herdado da principal (mesmo turno)'
+                   : (gama ? 'Fallback semanal (principal sem trabalho no turno)' : 'Sem principal na semana');
+          }
+          movGamas.set(m.id, { gama, tons: m.m3 * ratio, reason });
+        } else {
+          const gama = principalGamaPerTurno.get(tk) || null;
+          movGamas.set(m.id, { gama, tons: m.m3 * ratio, reason: gama ? 'Herdado da principal' : 'Sem principal no turno' });
+        }
       } else if (linha.tipo_benchmark === 'charriot') {
-        // Duplos/Tábuas: herdam do [B] do mesmo turno
         const gama = charriotBGamaPerTurno.get(tk) || null;
         movGamas.set(m.id, { gama, tons: m.m3 * ratio, reason: gama ? 'Herdado do charriot [B]' : 'Sem [B] no turno' });
       } else {

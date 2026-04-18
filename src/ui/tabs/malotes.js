@@ -93,6 +93,11 @@ function loadState(userId) { try { const r = localStorage.getItem(storageKey(use
 function saveState(userId, state) { try { localStorage.setItem(storageKey(userId), JSON.stringify(state)); } catch (e) { console.warn('saveState', e); } }
 function clearState(userId) { localStorage.removeItem(storageKey(userId)); }
 
+// UI prefs: estado collapse/expand dos aproveitamentos (B)
+const UI_PREFS_KEY = 'mcfpsy-mcf-uiprefs';
+function loadUiPrefs() { try { return JSON.parse(localStorage.getItem(UI_PREFS_KEY) || '{}'); } catch { return {}; } }
+function saveUiPrefs(p) { try { localStorage.setItem(UI_PREFS_KEY, JSON.stringify(p)); } catch {} }
+
 function emptyEntry() { return { produto_stock: '', pecas_por_malote: 0, malotes: 0, produto_origem: '', multiplicador: 1 }; }
 
 // =========================================================
@@ -376,6 +381,9 @@ export async function renderMalotes(el, ctx) {
       #grelha tbody tr[data-grp="retestagem"] > td:first-child { box-shadow:inset 4px 0 0 ${GROUP_META.retestagem.color} }
       #grelha tbody tr.group-separator > td,
       #grelha tbody tr.group-header > td { box-shadow:none !important }
+      /* Linha fina discreta entre blocos dentro do mesmo grupo */
+      #grelha tbody tr[data-linha] > td { border-top:1px solid #f0f0f0 }
+      #grelha tbody tr[data-minus-linha][data-eidx="0"] > td { border-top:1px solid #f0f0f0 }
     </style>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
@@ -408,15 +416,34 @@ export async function renderMalotes(el, ctx) {
             <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0">m³</th>
           </tr></thead>
           <tbody id="grelhaBody">${(() => {
+            const uiPrefs = loadUiPrefs();
+            const bExpanded = !!uiPrefs.aprovBExpanded;
+            const isB = (nome) => / \(B\)$/.test(nome);
             let out = '';
             let prevGroup = null;
+            let aprovBBtnInserted = false;
             for (const l of linhasOrdenadas) {
               const g = groupOf(l.nome);
+              const lineIsB = isB(l.nome);
+
+              // Inserir botão de toggle antes das linhas (B) se ainda não inserido
+              if (g === 'aproveitamentos' && lineIsB && !aprovBBtnInserted) {
+                out += `<tr class="aprov-b-toggle"><td colspan="6" style="padding:6px 12px 10px;background:transparent">
+                  <button type="button" id="aprovBToggle" data-expanded="${bExpanded ? '1' : '0'}"
+                    style="padding:6px 14px;background:#fff;border:2px dashed ${GROUP_META.aproveitamentos.color};color:${GROUP_META.aproveitamentos.color};border-radius:8px;font-size:.8rem;cursor:pointer;font-weight:600">
+                    ${bExpanded ? '− Ocultar aproveitamentos (B)' : '+ Aproveitamentos (B)'}
+                  </button>
+                </td></tr>`;
+                aprovBBtnInserted = true;
+              }
+
+              // Saltar linhas (B) se minimizado
+              if (lineIsB && !bExpanded) continue;
+
               if (g !== prevGroup) {
                 if (prevGroup !== null) out += separatorRow();
                 out += groupHeaderRow(g);
               }
-              // Tag each data-* row with data-grp="<group>" for CSS left-edge color
               const tagged = rowHTML(l).replace(/<tr (data-linha|data-minus-linha|data-minus-extra|data-minus-add)=/g,
                 `<tr data-grp="${g}" $1=`);
               out += tagged;
@@ -519,10 +546,10 @@ export async function renderMalotes(el, ctx) {
         }
       }
 
-      // Auto-sync: aproveitamentos T1/T3 → madeira 2ª aprov T1/T3
-      const ma = nome.match(/^Linha aproveitamentos (T\d)$/);
+      // Auto-sync: aproveitamentos T1/T3 (opcional (B)) → madeira 2ª aprov T1/T3
+      const ma = nome.match(/^Linha aproveitamentos (T\d)( \(B\))?$/);
       if (ma) {
-        const target = `[+] Madeira de 2ª Aprov ${ma[1]}`;
+        const target = `[+] Madeira de 2ª Aprov ${ma[1]}${ma[2] || ''}`;
         const tls = state.linhas[target];
         if (tls) {
           tls.produto_stock = ls.produto_stock;
@@ -612,6 +639,17 @@ export async function renderMalotes(el, ctx) {
   });
 
   // --- Global controls ---
+  // Toggle aproveitamentos (B)
+  const aprovBBtn = el.querySelector('#aprovBToggle');
+  if (aprovBBtn) {
+    aprovBBtn.addEventListener('click', () => {
+      const prefs = loadUiPrefs();
+      prefs.aprovBExpanded = !prefs.aprovBExpanded;
+      saveUiPrefs(prefs);
+      renderMalotes(el, ctx);
+    });
+  }
+
   el.querySelector('#dataReg').addEventListener('change', (e) => { state.data_registo = e.target.value || hoje; persist(); });
   el.querySelector('#turnoSel').addEventListener('change', (e) => { state.turno = e.target.value; persist(); });
 
