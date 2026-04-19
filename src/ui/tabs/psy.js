@@ -1,3 +1,8 @@
+// Registos Produção PSY — grelha "turno-style" (similar ao MCF)
+// - Data + Turno no topo
+// - Uma linha por psy_linha; cada uma com produto (autocomplete) + stepper qtd
+// - Auto-save em localStorage; submit envia uma entry por linha preenchida
+
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
 
@@ -6,247 +11,241 @@ let produtosCache = null;
 
 async function loadLinhas() {
   if (linhasCache) return linhasCache;
-  const { data } = await supabase.from('psy_linhas').select('*').eq('ativo', true).order('nome');
+  const { data } = await supabase.from('psy_linhas').select('*').eq('ativo', true).order('ordem');
   linhasCache = data || [];
   return linhasCache;
 }
 
 async function loadProdutos() {
   if (produtosCache) return produtosCache;
-  const { data } = await supabase.from('psy_produtos').select('*').eq('ativo', true).order('nome');
-  produtosCache = data || [];
+  const { data } = await supabase.from('psy_produtos').select('nome').eq('ativo', true).order('nome');
+  produtosCache = (data || []).map(p => p.nome);
   return produtosCache;
 }
 
+// ==========================================================
+// Estado (localStorage por utilizador)
+// ==========================================================
+function storageKey(userId) { return `mcfpsy-psy-turno-${userId}`; }
+function loadState(userId) { try { const r = localStorage.getItem(storageKey(userId)); return r ? JSON.parse(r) : null; } catch { return null; } }
+function saveState(userId, state) { try { localStorage.setItem(storageKey(userId), JSON.stringify(state)); } catch (e) { console.warn('saveState', e); } }
+function clearState(userId) { localStorage.removeItem(storageKey(userId)); }
+
+// ==========================================================
+// Render
+// ==========================================================
 export async function renderPSY(el, ctx) {
-  el.innerHTML = `<div class="card"><h2>🏭 Registos Produção PSY</h2><p class="sub">A carregar...</p></div>`;
+  el.innerHTML = `<div class="card"><h2>🏭 Registos Produção PSY</h2><p class="sub">A carregar setup do turno...</p></div>`;
   const [linhas, produtos] = await Promise.all([loadLinhas(), loadProdutos()]);
 
-  // Items to submit (the "cart")
-  const items = [];
+  const userId = ctx.profile.id;
+  const hoje = new Date().toISOString().slice(0, 10);
+  let state = loadState(userId);
+
+  // Reset diário: mantém turno mas limpa quantidades e produtos
+  if (!state || state.data_registo !== hoje) {
+    state = { data_registo: hoje, turno: state?.turno || 'T1', desvio_objetivo: '', linhas: {} };
+    for (const l of linhas) state.linhas[l.nome] = { produto: '', quantidade: 0 };
+    saveState(userId, state);
+  }
+
+  // Garantir que todas as linhas existem no state
+  for (const l of linhas) {
+    if (!state.linhas[l.nome]) state.linhas[l.nome] = { produto: '', quantidade: 0 };
+  }
+
+  const produtoSet = new Set(produtos);
+
+  // ==========================================================
+  // Build HTML
+  // ==========================================================
+  function rowHTML(linha) {
+    const ls = state.linhas[linha.nome];
+    const qty = ls.quantidade || 0;
+    return `
+      <tr data-linha="${linha.nome}">
+        <td style="padding:10px;font-weight:600;white-space:nowrap">${linha.nome}</td>
+        <td style="padding:8px">
+          <input type="text" class="field-prod" list="psyProdList" value="${ls.produto || ''}" placeholder="Pesquisar tipo de palete..."
+            style="width:100%;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
+        </td>
+        <td style="padding:8px">
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+            <button type="button" class="btn-dec" style="width:44px;height:44px;border:2px solid var(--color-blue);background:#fff;color:var(--color-blue);border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">−</button>
+            <input type="number" class="field-qty" min="0" step="1" value="${qty}" style="width:80px;padding:10px;border:2px solid var(--color-border);border-radius:10px;text-align:center;font-size:1.2rem;font-weight:700">
+            <button type="button" class="btn-inc" style="width:44px;height:44px;border:2px solid var(--color-blue);background:var(--color-blue);color:#fff;border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">+</button>
+          </div>
+        </td>
+      </tr>`;
+  }
 
   el.innerHTML = `
     <div class="card">
-      <h2>🏭 Registos Produção PSY</h2>
-      <p class="sub">Registo de produção de paletes — define data, linha e turno, depois adiciona vários modelos de paletes e quantidades. Submete tudo no final.</p>
-      <div class="form-grid" style="margin-bottom:20px">
-        <div class="field">
-          <label>Data do registo</label>
-          <input class="big" id="dataRegisto" type="date" value="${new Date().toISOString().slice(0,10)}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">🏭 Registos Produção PSY</h2>
+        <span class="sync-pill" id="psyAutoSave" style="padding:4px 10px;background:#eef7ee;color:#1f7a3a;border-radius:999px;font-size:.75rem;font-weight:600">✓ Guardado</span>
+      </div>
+      <p class="sub">Escolhe o tipo de palete e quantidade para cada linha. Auto-save contínuo. Submete tudo no final.</p>
+
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="field" style="min-width:160px">
+          <label>Data</label>
+          <input type="date" id="psyDataReg" value="${state.data_registo}" style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem">
         </div>
-        <div class="field">
+        <div class="field" style="min-width:120px">
           <label>Turno</label>
-          <select class="big" id="turno">
-            <option value="T1">T1</option>
-            <option value="T2">T2</option>
+          <select id="psyTurnoSel" style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem">
+            <option value="T1" ${state.turno==='T1'?'selected':''}>T1</option>
+            <option value="T2" ${state.turno==='T2'?'selected':''}>T2</option>
           </select>
         </div>
       </div>
 
-      <div style="border:2px dashed var(--color-border);border-radius:14px;padding:18px;margin-bottom:20px">
-        <h3 style="font-size:1rem;margin-bottom:14px">➕ Adicionar palete</h3>
-        <div class="form-grid">
-          <div class="field">
-            <label>Linha de produção</label>
-            <select id="linha" style="width:100%;padding:14px 16px;border:2px solid var(--color-border);border-radius:12px;font-size:1rem;background:#fff;min-height:54px">
-              ${linhas.map(l => `<option value="${l.nome}">${l.nome}</option>`).join('')}
-            </select>
-          </div>
-          <div class="field" style="grid-column:1/-1">
-            <label>Tipo de palete</label>
-            <input type="text" id="prodSearch" placeholder="Pesquisar palete..." style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem;margin-bottom:6px">
-            <select id="produto" size="6" style="width:100%;min-height:140px;padding:8px;border:2px solid var(--color-border);border-radius:12px;font-size:.9rem">
-              ${produtos.map(p => `<option value="${p.nome}">${p.nome}</option>`).join('')}
-            </select>
-            <span class="hint" id="prodCount">${produtos.length} tipos disponíveis</span>
-          </div>
-          <div style="display:flex;gap:12px;grid-column:1/-1">
-            <div class="field" style="flex:1">
-              <label>Quantidade (unidades)</label>
-              <input class="big" id="qty" type="number" min="1" step="1" inputmode="numeric" placeholder="Nº paletes">
-            </div>
-            <div class="field" style="flex:1;display:flex;flex-direction:column">
-              <label>&nbsp;</label>
-              <button type="button" class="btn btn-primary" id="addBtn" style="flex:1;justify-content:center;font-size:1.15rem;font-weight:600;border-radius:12px">+ Adicionar à lista</button>
-            </div>
-          </div>
-        </div>
+      <datalist id="psyProdList">
+        ${produtos.map(p => `<option value="${p.replace(/"/g, '&quot;')}"></option>`).join('')}
+      </datalist>
+
+      <div style="overflow-x:auto">
+        <table id="psyGrelha" style="width:100%;border-collapse:collapse;min-width:600px;font-size:.9rem">
+          <thead><tr style="background:#f5f5f7">
+            <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0;width:120px">Linha</th>
+            <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0">Tipo de palete</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0;width:240px">Quantidade</th>
+          </tr></thead>
+          <tbody id="psyGrelhaBody">${linhas.map(rowHTML).join('')}</tbody>
+          <tfoot><tr style="background:#f0f7ff;font-weight:700">
+            <td colspan="2" style="padding:12px;border-top:2px solid var(--color-blue)">Total</td>
+            <td style="padding:12px;text-align:center;border-top:2px solid var(--color-blue)" id="psyTotQty">0 unid</td>
+          </tr></tfoot>
+        </table>
       </div>
 
-      <div id="cartSection" style="display:none">
-        <h3 style="font-size:1rem;margin-bottom:10px">📦 Paletes a registar</h3>
-        <div id="cartList"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:14px;background:#f0f7ff;border-radius:12px">
-          <div><b id="cartTotal">0</b> modelo(s) · <b id="cartQtyTotal">0</b> unidades total</div>
-        </div>
+      <div class="field" style="margin-top:16px">
+        <label>Desvio ao objetivo (opcional)</label>
+        <textarea id="psyDesvio" rows="2" placeholder="Motivos de eventual desvio (paragens, avarias, etc.)..." style="font-family:inherit;font-size:.95rem;padding:12px 14px;border:2px solid var(--color-border);border-radius:12px;resize:vertical;width:100%">${state.desvio_objetivo || ''}</textarea>
+      </div>
 
-        <div class="field" style="margin-top:16px">
-          <label>Desvio ao objetivo (opcional)</label>
-          <textarea id="desvioObj" rows="2" placeholder="Explica motivos de eventual desvio ao objetivo (paragens, avarias, etc.)..." style="font-family:inherit;font-size:.95rem;padding:12px 14px;border:2px solid var(--color-border);border-radius:12px;resize:vertical;width:100%"></textarea>
-        </div>
-
-        <div class="btn-row" style="margin-top:16px">
-          <button type="button" class="btn btn-secondary btn-big" id="clearAllBtn">Limpar tudo</button>
-          <button type="button" class="btn btn-success btn-big" id="submitAllBtn">✓ Registar tudo</button>
-        </div>
+      <div class="btn-row" style="margin-top:20px">
+        <button type="button" class="btn btn-danger btn-big" id="psyResetBtn">🗑 Reset</button>
+        <button type="button" class="btn btn-success btn-big" id="psySubmitBtn">✓ Submeter turno</button>
       </div>
     </div>
+
     <div class="card">
       <h2>📋 Registos recentes</h2>
-      <div id="recentList"><p class="sub">A carregar...</p></div>
+      <div id="psyRecentList"><p class="sub">A carregar...</p></div>
     </div>
   `;
 
-  const $ = id => el.querySelector('#'+id);
-  const prodSelect = $('produto');
-  const prodSearch = $('prodSearch');
-  const prodCount = $('prodCount');
+  // ==========================================================
+  // Interactions
+  // ==========================================================
+  const body = el.querySelector('#psyGrelhaBody');
+  const saveInd = el.querySelector('#psyAutoSave');
 
-  // Search filter for pallet types
-  prodSearch.addEventListener('input', () => {
-    const q = prodSearch.value.trim().toLowerCase();
-    let visible = 0;
-    for (const opt of prodSelect.options) {
-      const match = !q || opt.value.toLowerCase().includes(q);
-      opt.style.display = match ? '' : 'none';
-      if (match) visible++;
-    }
-    prodCount.textContent = `${visible} de ${produtos.length} tipos`;
-    if (q) {
-      for (const opt of prodSelect.options) {
-        if (opt.style.display !== 'none') { opt.selected = true; break; }
-      }
-    }
-  });
+  function flashSave() {
+    saveInd.textContent = '💾 A gravar...'; saveInd.style.background = '#e3f2fd'; saveInd.style.color = '#0d47a1';
+    setTimeout(() => { saveInd.textContent = '✓ Guardado'; saveInd.style.background = '#eef7ee'; saveInd.style.color = '#1f7a3a'; }, 400);
+  }
+  function persist() { saveState(userId, state); flashSave(); }
 
-  function renderCart() {
-    const section = $('cartSection');
-    const list = $('cartList');
-    if (!items.length) { section.style.display = 'none'; return; }
-    section.style.display = '';
-    list.innerHTML = items.map((it, i) => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;border:1px solid var(--color-border);border-radius:10px;margin-bottom:8px;gap:10px">
-        <div style="flex:1">
-          <div style="font-weight:600">${it.produto}</div>
-          <div style="font-size:.8rem;color:#6e6e73">${it.linha}</div>
-        </div>
-        <div style="font-size:1.2rem;font-weight:700;color:var(--color-blue);min-width:60px;text-align:right">${it.quantidade}</div>
-        <button type="button" class="btn btn-danger" data-rm="${i}" style="padding:8px 12px;font-size:.85rem">✕</button>
-      </div>
-    `).join('');
-    $('cartTotal').textContent = items.length;
-    $('cartQtyTotal').textContent = items.reduce((s, it) => s + it.quantidade, 0);
-
-    // Remove buttons
-    list.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
-      items.splice(parseInt(b.dataset.rm), 1);
-      renderCart();
-    });
+  function updateTotals() {
+    const t = linhas.reduce((s, l) => s + (Number(state.linhas[l.nome]?.quantidade) || 0), 0);
+    el.querySelector('#psyTotQty').textContent = `${t} unid`;
   }
 
-  // Add to cart
-  $('addBtn').addEventListener('click', () => {
-    const produto = prodSelect.value;
-    const qty = parseInt($('qty').value);
-    if (!produto) return toast('Seleciona um tipo de palete', 'error');
-    if (!qty || qty <= 0) return toast('Indica a quantidade', 'error');
+  body.querySelectorAll('tr[data-linha]').forEach(row => {
+    const nome = row.dataset.linha;
+    const ls = state.linhas[nome];
+    const prodInp = row.querySelector('.field-prod');
+    const qtyInp = row.querySelector('.field-qty');
 
-    const linha = $('linha').value;
+    prodInp.addEventListener('input', () => { ls.produto = prodInp.value; persist(); });
+    qtyInp.addEventListener('change', () => { ls.quantidade = Math.max(0, parseInt(qtyInp.value) || 0); qtyInp.value = ls.quantidade; persist(); updateTotals(); });
 
-    // Check if same product+line already in cart — merge quantities
-    const existing = items.find(it => it.produto === produto && it.linha === linha);
-    if (existing) {
-      existing.quantidade += qty;
-    } else {
-      items.push({ produto, quantidade: qty, linha });
+    row.querySelector('.btn-inc').addEventListener('click', () => { ls.quantidade = (Number(ls.quantidade) || 0) + 1; qtyInp.value = ls.quantidade; persist(); updateTotals(); });
+    row.querySelector('.btn-dec').addEventListener('click', () => { ls.quantidade = Math.max(0, (Number(ls.quantidade) || 0) - 1); qtyInp.value = ls.quantidade; persist(); updateTotals(); });
+  });
+
+  el.querySelector('#psyDataReg').addEventListener('change', (e) => { state.data_registo = e.target.value || hoje; persist(); });
+  el.querySelector('#psyTurnoSel').addEventListener('change', (e) => { state.turno = e.target.value; persist(); });
+  el.querySelector('#psyDesvio').addEventListener('input', (e) => { state.desvio_objetivo = e.target.value; persist(); });
+
+  el.querySelector('#psyResetBtn').addEventListener('click', () => {
+    if (!confirm('Apagar todos os registos deste turno?')) return;
+    clearState(userId); renderPSY(el, ctx);
+  });
+
+  el.querySelector('#psySubmitBtn').addEventListener('click', async () => {
+    const dataReg = state.data_registo;
+    const turno = state.turno;
+    if (!dataReg) { toast('Indica a data do registo', 'error'); return; }
+
+    const rows = [];
+    const unknownProds = [];
+    for (const l of linhas) {
+      const ls = state.linhas[l.nome];
+      const q = Number(ls.quantidade) || 0;
+      const prod = (ls.produto || '').trim();
+      if (q <= 0 || !prod) continue;
+      if (!produtoSet.has(prod)) { unknownProds.push(`${l.nome} → "${prod}"`); continue; }
+      rows.push({
+        data_registo: dataReg,
+        linha: l.nome,
+        turno,
+        produto: prod,
+        quantidade: q,
+        operador_id: ctx.profile.id,
+        ...(state.desvio_objetivo?.trim() ? { desvio_objetivo: state.desvio_objetivo.trim() } : {}),
+      });
     }
 
-    $('qty').value = '';
-    prodSearch.value = '';
-    prodSearch.dispatchEvent(new Event('input'));
-    renderCart();
-    toast(`${produto} adicionado`, 'success');
-  });
+    if (unknownProds.length) { toast(`Produtos desconhecidos: ${unknownProds.join('; ')}`, 'error'); return; }
+    if (rows.length === 0) { toast('Nada para submeter. Indica produto + quantidade em pelo menos uma linha.', 'error'); return; }
 
-  // Clear all
-  $('clearAllBtn').addEventListener('click', () => {
-    items.length = 0;
-    renderCart();
-  });
+    const totQty = rows.reduce((s, r) => s + r.quantidade, 0);
+    if (!confirm(`Submeter ${rows.length} registo(s) — ${totQty} unidades totais?`)) return;
 
-  // Submit all
-  $('submitAllBtn').addEventListener('click', async () => {
-    if (!items.length) return toast('Adiciona pelo menos um modelo', 'error');
-    const dataReg = $('dataRegisto').value;
-    const turno = $('turno').value;
-
-    if (!dataReg) return toast('Indica a data do registo', 'error');
-
-    const totalQty = items.reduce((s, it) => s + it.quantidade, 0);
-
-    const ok = await showSummary({
-      Data: dataReg,
-      Turno: turno,
-      'Modelos': `${items.length} tipo(s)`,
-      'Total unidades': totalQty,
-    }, items);
-    if (!ok) return;
-
-    const btn = $('submitAllBtn');
+    const btn = el.querySelector('#psySubmitBtn');
     btn.disabled = true; btn.textContent = 'A gravar...';
-
-    const rows = items.map(it => ({
-      data_registo: dataReg,
-      linha: it.linha,
-      turno,
-      produto: it.produto,
-      quantidade: it.quantidade,
-      operador_id: ctx.profile.id,
-      ...(($('desvioObj')?.value || '').trim() ? { desvio_objetivo: $('desvioObj').value.trim() } : {}),
-    }));
-
     const { error } = await supabase.from('psy_producao').insert(rows);
-    btn.disabled = false; btn.textContent = '✓ Registar tudo';
+    btn.disabled = false; btn.textContent = '✓ Submeter turno';
 
-    if (error) return toast('Erro: ' + error.message, 'error');
+    if (error) { toast('Erro: ' + error.message, 'error'); return; }
 
-    toast(`✓ ${items.length} registo(s) PSY gravados`, 'success');
-    items.length = 0;
-    renderCart();
-    loadRecent();
+    toast(`✓ ${rows.length} registo(s) PSY gravados`, 'success');
+
+    // Limpar quantidades + desvio, manter setup (produto) como no MCF
+    for (const l of linhas) state.linhas[l.nome].quantidade = 0;
+    state.desvio_objetivo = '';
+    persist();
+    renderPSY(el, ctx);
   });
 
-  // Recent records
+  // Recent records (igual ao anterior, agrupa por data/linha/turno)
   async function loadRecent() {
     const { data: recent } = await supabase
       .from('psy_producao')
       .select('*, profiles!operador_id(nome)')
       .order('criado_em', { ascending: false })
-      .limit(20);
-
-    const list = $('recentList');
-    if (!recent?.length) {
-      list.innerHTML = '<p style="color:#888;text-align:center;padding:20px">Sem registos.</p>';
-      return;
-    }
-
-    // Group by (data_registo, linha, turno, criado_em rounded to minute)
+      .limit(40);
+    const list = el.querySelector('#psyRecentList');
+    if (!recent?.length) { list.innerHTML = '<p style="color:#888;text-align:center;padding:20px">Sem registos.</p>'; return; }
     const groups = new Map();
     for (const r of recent) {
-      const key = `${r.data_registo}|${r.linha}|${r.turno}|${r.criado_em.slice(0,16)}`;
+      const key = `${r.data_registo}|${r.turno}|${r.criado_em.slice(0,16)}`;
       if (!groups.has(key)) groups.set(key, { ...r, items: [] });
       groups.get(key).items.push(r);
     }
-
     list.innerHTML = [...groups.values()].map(g => `
       <div style="padding:14px;border:1px solid #e0e0e0;border-radius:12px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-          <div style="font-weight:600">${g.linha} · ${g.turno} · ${g.data_registo}</div>
+          <div style="font-weight:600">${g.data_registo} · ${g.turno}</div>
           <div style="font-size:.8rem;color:#6e6e73">${g.profiles?.nome || '—'} · ${new Date(g.criado_em).toLocaleString('pt-PT')}</div>
         </div>
         ${g.items.map(it => `
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid #f0f0f3;gap:8px">
-            <span style="color:#6e6e73;min-width:70px">${it.linha}</span>
+            <span style="color:#6e6e73;min-width:90px">${it.linha}</span>
             <span style="flex:1">${it.produto}</span>
             <b style="color:var(--color-blue)">${it.quantidade}</b>
           </div>
@@ -258,31 +257,6 @@ export async function renderPSY(el, ctx) {
     `).join('');
   }
 
+  updateTotals();
   loadRecent();
-}
-
-function showSummary(obj, items) {
-  return new Promise(resolve => {
-    const div = document.createElement('div');
-    div.className = 'modal-overlay';
-    div.innerHTML = `
-      <div class="modal" style="max-width:600px;max-height:80vh;overflow-y:auto">
-        <h3>📋 Confirmar operação</h3>
-        ${Object.entries(obj).map(([k,v]) => `<div class="summary-row"><span>${k}</span><b>${v}</b></div>`).join('')}
-        ${items ? `
-          <div style="margin-top:14px;border-top:1px solid #e0e0e0;padding-top:14px">
-            <div style="font-weight:600;margin-bottom:8px">Detalhe:</div>
-            ${items.map(it => `<div class="summary-row"><span>${it.linha} · ${it.produto}</span><b>${it.quantidade}</b></div>`).join('')}
-          </div>
-        ` : ''}
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="cancelBtn">Cancelar</button>
-          <button class="btn btn-success" id="okBtn">✓ Confirmar</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(div);
-    div.querySelector('#cancelBtn').onclick = () => { div.remove(); resolve(false); };
-    div.querySelector('#okBtn').onclick = () => { div.remove(); resolve(true); };
-  });
 }
