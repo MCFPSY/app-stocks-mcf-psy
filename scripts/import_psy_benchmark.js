@@ -14,10 +14,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// Load psy_produtos set
+// Load psy_produtos + psy_linhas sets
 const { data: prodRows } = await supabase.from('psy_produtos').select('nome').eq('ativo', true);
 const produtoSet = new Set((prodRows || []).map(p => p.nome));
-console.log(`psy_produtos ativos: ${produtoSet.size}`);
+const { data: linhaRows } = await supabase.from('psy_linhas').select('nome').eq('ativo', true);
+const linhaSet = new Set((linhaRows || []).map(l => l.nome));
+console.log(`psy_produtos ativos: ${produtoSet.size} · psy_linhas ativas: ${linhaSet.size}`);
 
 // Read PSY_data sheet
 const buf = await readFile('C:/Users/Goncalo.Barata/Desktop/App stocks/reference/Report diário produção.xlsm');
@@ -43,18 +45,24 @@ console.log(`Colunas-produto reconhecidas: ${prodCols.length}`);
 // Iterate data rows: for each (linha, produto), track max quantidade
 const maxMap = new Map(); // "linha|produto" -> qty
 
+// Ignorar colunas não-produto (agregações / metadados no próprio psy_produtos)
+const SKIP_PRODUTOS = new Set(['Total', 'Totals', 'TOTAL']);
+const SANE_MAX = 100000; // Cap de sanidade — valores acima disto são erros de dados
+
 for (let i = 3; i < data.length; i++) {
   const row = data[i];
   if (!row) continue;
   const linha = row[4]; // col E
   if (!linha) continue;
   const linhaStr = String(linha).trim();
+  if (!linhaSet.has(linhaStr)) continue; // skip linhas desconhecidas (dates, etc.)
 
   for (const p of prodCols) {
+    if (SKIP_PRODUTOS.has(p.nome)) continue;
     const v = row[p.idx];
     if (v === null || v === undefined || v === '') continue;
     const n = Number(v);
-    if (!isFinite(n) || n <= 0) continue;
+    if (!isFinite(n) || n <= 0 || n > SANE_MAX) continue;
     const key = `${linhaStr}|${p.nome}`;
     const prev = maxMap.get(key) || 0;
     if (n > prev) maxMap.set(key, n);
