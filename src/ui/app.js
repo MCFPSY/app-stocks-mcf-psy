@@ -85,6 +85,11 @@ export function renderApp(root, profile) {
   refreshBadges();
   updateSyncPill();
 
+  // Tabs que recarregam automaticamente (só display, sem formulários).
+  // Todas as outras (registos, transfer, ajustes, pivot, consumo) não
+  // re-renderizam no timer para não apagar inputs em curso.
+  const AUTO_RERENDER = new Set(['main', 'movimentos', 'inventario', 'duvidas', 'pedidos']);
+
   if (reloadTimer) clearInterval(reloadTimer);
   reloadTimer = setInterval(async () => {
     if (!navigator.onLine) { updateSyncPill(); return; }
@@ -95,7 +100,8 @@ export function renderApp(root, profile) {
     txt.textContent = 'A sincronizar...';
     await sync();
     setTimeout(() => {
-      renderCurrentTab();
+      // Só re-render em tabs puramente de display
+      if (AUTO_RERENDER.has(currentTab)) renderCurrentTab();
       refreshBadges();
       updateSyncPill();
     }, 500);
