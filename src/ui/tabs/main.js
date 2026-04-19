@@ -418,13 +418,22 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
   const weekStartIso = days[0].iso;
   const weekEndIso = days[6].iso;
 
-  const [semanalRes, prodRes] = await Promise.all([
+  const earliestPast = pastWeeks[0];
+  const pastStartIso = isoWeekMonday(earliestPast.year, earliestPast.week).toISOString().slice(0, 10);
+
+  const [semanalRes, prodRes, prodAllRes, bmRes] = await Promise.all([
     supabase.from('v_psy_semanal').select('*').in('semana', allWeekKeys),
     // PSY agora está em movimentos (empresa='PSY'), quantidade = malotes
     supabase.from('movimentos').select('linha, turno, data_registo, malotes, produto_stock, desvio_objetivo')
       .eq('empresa', 'PSY').eq('tipo', 'entrada_producao')
       .eq('estornado', false).eq('duvida_resolvida', true)
       .gte('data_registo', weekStartIso).lte('data_registo', weekEndIso),
+    // Movimentos também para past weeks (para computar plano com produtos)
+    supabase.from('movimentos').select('linha, turno, data_registo, produto_stock')
+      .eq('empresa', 'PSY').eq('tipo', 'entrada_producao')
+      .eq('estornado', false).eq('duvida_resolvida', true)
+      .gte('data_registo', pastStartIso).lte('data_registo', weekEndIso),
+    supabase.from('psy_benchmark').select('linha, produto, target_qtd'),
   ]);
   if (semanalRes.error) { el.innerHTML = `<p>Erro: ${semanalRes.error.message}</p>`; return; }
 
@@ -441,42 +450,82 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
 
   const semanal = semanalRes.data || [];
   const movs = prodRes.data || [];
+  const movsAll = prodAllRes.data || [];
+
+  // Benchmark map: "linha|produto" -> target_qtd (max por turno, p85)
+  const bmMap = new Map();
+  for (const b of (bmRes.data || [])) bmMap.set(`${b.linha}|${b.produto}`, Number(b.target_qtd || 0));
+
+  // Plano = sum de targets para cada (turno, produto) distinto produzido.
+  // Se um dia/semana tem 2 turnos a produzir o mesmo produto, plano = 2×target.
+  function planoForMovs(linhaName, movsSubset) {
+    const pairs = new Set(movsSubset.map(m => `${m.turno}|${m.produto_stock}`));
+    let p = 0;
+    for (const pair of pairs) {
+      const produto = pair.split('|').slice(1).join('|');
+      p += bmMap.get(`${linhaName}|${produto}`) || 0;
+    }
+    return p;
+  }
 
   const rows = rowDefs.map(rd => {
     const label = rd.turno ? `${rd.linha} ${rd.turno}` : rd.linha;
     const match = (r) => r.linha === rd.linha && (!rd.turno || r.turno === rd.turno);
 
-    const pastWeekly = pastWeeks.map(w => ({
-      real: semanal.filter(r => match(r) && r.semana === w.key).reduce((s,r) => s + Number(r.qty_total || 0), 0),
-      plano: 0,
-    }));
+    const pastWeekly = pastWeeks.map(w => {
+      const weekMovs = movsAll.filter(m => {
+        if (!match(m)) return false;
+        const d = m.data_registo;
+        const { year, week } = isoWeek(new Date(d + 'T00:00:00Z'));
+        return weekKey(year, week) === w.key;
+      });
+      const real = semanal.filter(r => match(r) && r.semana === w.key).reduce((s,r) => s + Number(r.qty_total || 0), 0);
+      return { real, plano: planoForMovs(rd.linha, weekMovs) };
+    });
     const pastAccReal = pastWeekly.reduce((s,c) => s+c.real, 0);
+    const pastAccPlan = pastWeekly.reduce((s,c) => s+c.plano, 0);
 
-    const dailyCells = days.map(d => ({
-      real: movs.filter(m => match(m) && m.data_registo === d.iso).reduce((s,m) => s + Number(m.malotes || 0), 0),
-      plano: 0,
-    }));
+    const dailyCells = days.map(d => {
+      const dayMovs = movs.filter(m => match(m) && m.data_registo === d.iso);
+      return {
+        real: dayMovs.reduce((s,m) => s + Number(m.malotes || 0), 0),
+        plano: planoForMovs(rd.linha, dayMovs),
+      };
+    });
     const weekReal = dailyCells.reduce((s,c) => s+c.real, 0);
+    const weekPlan = dailyCells.reduce((s,c) => s+c.plano, 0);
     const todayMovs = movs.filter(m => match(m) && m.data_registo === dayIso);
     const todayReal = todayMovs.reduce((s,m) => s + Number(m.malotes || 0), 0);
+    const todayPlan = planoForMovs(rd.linha, todayMovs);
     const todayProduto = todayMovs[0]?.produto_stock || '';
     const todayCausas = [...new Set(todayMovs.map(m => m.desvio_objetivo).filter(Boolean))].join(' · ');
 
-    return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan: 0, dailyCells, weekReal, weekPlan: 0, todayReal, todayPlan: 0, todayProduto, todayCausas };
+    return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan, dailyCells, weekReal, weekPlan, todayReal, todayPlan, todayProduto, todayCausas };
   });
 
-  const pastWeeklyTot = pastWeeks.map((_, i) => ({ real: rows.reduce((s,r) => s + r.pastWeekly[i].real, 0), plano: 0 }));
-  const dailyTot = days.map((_, i) => ({ real: rows.reduce((s,r) => s + r.dailyCells[i].real, 0), plano: 0 }));
+  const pastWeeklyTot = pastWeeks.map((_, i) => ({
+    real: rows.reduce((s,r) => s + r.pastWeekly[i].real, 0),
+    plano: rows.reduce((s,r) => s + r.pastWeekly[i].plano, 0),
+  }));
+  const dailyTot = days.map((_, i) => ({
+    real: rows.reduce((s,r) => s + r.dailyCells[i].real, 0),
+    plano: rows.reduce((s,r) => s + r.dailyCells[i].plano, 0),
+  }));
   const pastAccRealTot = rows.reduce((s,r) => s + r.pastAccReal, 0);
+  const pastAccPlanTot = rows.reduce((s,r) => s + r.pastAccPlan, 0);
   const weekRealTot = rows.reduce((s,r) => s + r.weekReal, 0);
+  const weekPlanTot = rows.reduce((s,r) => s + r.weekPlan, 0);
   const todayRealTot = rows.reduce((s,r) => s + r.todayReal, 0);
+  const todayPlanTot = rows.reduce((s,r) => s + r.todayPlan, 0);
   const totalHC = rows.reduce((s,r) => s + (r.linha.hc || 0), 0);
 
   el.innerHTML = buildTable({
     rows, pastWeeks, days, dayIso,
     pastWeeklyTot, dailyTot,
-    pastAccRealTot, pastAccPlanTot: 0, weekRealTot, weekPlanTot: 0, todayRealTot, todayPlanTot: 0,
-    totalHC, totalLabel: 'Total PSY', unit: 'paletes', fmt: v => v ? v.toLocaleString('pt-PT') : '-', fmtPlan: () => '-', noPlan: true,
+    pastAccRealTot, pastAccPlanTot, weekRealTot, weekPlanTot, todayRealTot, todayPlanTot,
+    totalHC, totalLabel: 'Total PSY', unit: 'paletes',
+    fmt: v => v ? v.toLocaleString('pt-PT') : '-',
+    fmtPlan: v => v ? Math.round(v).toLocaleString('pt-PT') : '-',
   });
 }
 
