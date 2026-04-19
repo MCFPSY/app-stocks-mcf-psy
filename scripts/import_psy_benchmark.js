@@ -47,20 +47,18 @@ const maxMap = new Map(); // "linha|produto" -> qty
 
 const SKIP_PRODUTOS = new Set(['Total', 'Totals', 'TOTAL']);
 const SANE_MAX = 100000;
+const PERCENTIL = 0.90; // p90 exclui outliers (operadores a registar 2 turnos numa só row)
 
-// Passo 1: agregar por (data, linha, turno, produto) — soma de todas as rows
-// que partilhem essa chave (múltiplos registos no mesmo turno).
-const turnoTotals = new Map(); // "data|linha|turno|produto" -> sum
+// Recolher TODOS os valores > 0 por (linha, produto)
+const allValues = new Map(); // "linha|produto" -> [value, value, ...]
 
 for (let i = 3; i < data.length; i++) {
   const row = data[i];
   if (!row) continue;
-  const linha = row[4]; const turno = row[7]; const dia = row[3];  // cols E, H, D
-  if (!linha || !turno || !dia) continue;
+  const linha = row[4]; const turno = row[7]; // cols E, H
+  if (!linha || !turno) continue;
   const linhaStr = String(linha).trim();
   if (!linhaSet.has(linhaStr)) continue;
-  const turnoStr = String(turno).trim();
-  const diaStr = String(dia);
 
   for (const p of prodCols) {
     if (SKIP_PRODUTOS.has(p.nome)) continue;
@@ -68,17 +66,23 @@ for (let i = 3; i < data.length; i++) {
     if (v === null || v === undefined || v === '') continue;
     const n = Number(v);
     if (!isFinite(n) || n <= 0 || n > SANE_MAX) continue;
-    const key = `${diaStr}|${linhaStr}|${turnoStr}|${p.nome}`;
-    turnoTotals.set(key, (turnoTotals.get(key) || 0) + n);
+    const key = `${linhaStr}|${p.nome}`;
+    if (!allValues.has(key)) allValues.set(key, []);
+    allValues.get(key).push(n);
   }
 }
 
-// Passo 2: máximo por (linha, produto) sobre os totais de turno
-for (const [key, qtd] of turnoTotals) {
-  const [, linha, , produto] = key.split('|');
-  const k = `${linha}|${produto}`;
-  const prev = maxMap.get(k) || 0;
-  if (qtd > prev) maxMap.set(k, qtd);
+// Target = percentil 90 (robusto a outliers), com min de 1 valor
+function percentile(sorted, p) {
+  if (sorted.length === 1) return sorted[0];
+  const idx = Math.ceil(p * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
+}
+
+for (const [key, values] of allValues) {
+  values.sort((a, b) => a - b);
+  const p90 = percentile(values, PERCENTIL);
+  maxMap.set(key, Math.round(p90));
 }
 
 console.log(`Pares (linha, produto) com registos: ${maxMap.size}`);
