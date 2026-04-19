@@ -72,18 +72,26 @@ for (let i = 3; i < data.length; i++) {
   }
 }
 
-// Target = percentil 90 (robusto a outliers), com min de 1 valor
+// Target = percentil 85 dos valores — robusto a outliers e reflecte o
+// "máximo normal" (não o máximo absoluto, que tipicamente é erro ou dia atípico)
+const PERCENTIL_TARGET = 0.85;
+
 function percentile(sorted, p) {
+  if (sorted.length === 0) return 0;
   if (sorted.length === 1) return sorted[0];
   const idx = Math.ceil(p * sorted.length) - 1;
   return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
 }
 
+let outliersRemoved = 0, totalPoints = 0;
 for (const [key, values] of allValues) {
-  values.sort((a, b) => a - b);
-  const p90 = percentile(values, PERCENTIL);
-  maxMap.set(key, Math.round(p90));
+  const sorted = [...values].sort((a, b) => a - b);
+  const target = percentile(sorted, PERCENTIL_TARGET);
+  outliersRemoved += sorted.filter(v => v > target).length;
+  totalPoints += sorted.length;
+  maxMap.set(key, Math.round(target));
 }
+console.log(`Valores acima do target: ${outliersRemoved} de ${totalPoints} pontos (${(outliersRemoved/totalPoints*100).toFixed(1)}%)`);
 
 console.log(`Pares (linha, produto) com registos: ${maxMap.size}`);
 
