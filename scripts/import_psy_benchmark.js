@@ -45,17 +45,22 @@ console.log(`Colunas-produto reconhecidas: ${prodCols.length}`);
 // Iterate data rows: for each (linha, produto), track max quantidade
 const maxMap = new Map(); // "linha|produto" -> qty
 
-// Ignorar colunas não-produto (agregações / metadados no próprio psy_produtos)
 const SKIP_PRODUTOS = new Set(['Total', 'Totals', 'TOTAL']);
-const SANE_MAX = 100000; // Cap de sanidade — valores acima disto são erros de dados
+const SANE_MAX = 100000;
+
+// Passo 1: agregar por (data, linha, turno, produto) — soma de todas as rows
+// que partilhem essa chave (múltiplos registos no mesmo turno).
+const turnoTotals = new Map(); // "data|linha|turno|produto" -> sum
 
 for (let i = 3; i < data.length; i++) {
   const row = data[i];
   if (!row) continue;
-  const linha = row[4]; // col E
-  if (!linha) continue;
+  const linha = row[4]; const turno = row[7]; const dia = row[3];  // cols E, H, D
+  if (!linha || !turno || !dia) continue;
   const linhaStr = String(linha).trim();
-  if (!linhaSet.has(linhaStr)) continue; // skip linhas desconhecidas (dates, etc.)
+  if (!linhaSet.has(linhaStr)) continue;
+  const turnoStr = String(turno).trim();
+  const diaStr = String(dia);
 
   for (const p of prodCols) {
     if (SKIP_PRODUTOS.has(p.nome)) continue;
@@ -63,10 +68,17 @@ for (let i = 3; i < data.length; i++) {
     if (v === null || v === undefined || v === '') continue;
     const n = Number(v);
     if (!isFinite(n) || n <= 0 || n > SANE_MAX) continue;
-    const key = `${linhaStr}|${p.nome}`;
-    const prev = maxMap.get(key) || 0;
-    if (n > prev) maxMap.set(key, n);
+    const key = `${diaStr}|${linhaStr}|${turnoStr}|${p.nome}`;
+    turnoTotals.set(key, (turnoTotals.get(key) || 0) + n);
   }
+}
+
+// Passo 2: máximo por (linha, produto) sobre os totais de turno
+for (const [key, qtd] of turnoTotals) {
+  const [, linha, , produto] = key.split('|');
+  const k = `${linha}|${produto}`;
+  const prev = maxMap.get(k) || 0;
+  if (qtd > prev) maxMap.set(k, qtd);
 }
 
 console.log(`Pares (linha, produto) com registos: ${maxMap.size}`);
