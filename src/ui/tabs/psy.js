@@ -221,6 +221,22 @@ export async function renderPSY(el, ctx) {
     return { nome, idx, entry: ls.entries[idx], ls };
   }
 
+  function updateTargetCell(linhaNome, idx) {
+    const row = body.querySelector(`tr[data-linha="${CSS.escape(linhaNome)}"][data-eidx="${idx}"]`);
+    if (!row) return;
+    const cells = row.children;
+    // cells: [0]=name, [1]=prod, [2]=qty, [3]=target, [4]=remove
+    if (cells.length < 4) return;
+    const targetCell = cells[3];
+    const e = state.linhas[linhaNome]?.entries?.[idx];
+    if (!e) return;
+    const target = targetFor(linhaNome, e.produto);
+    const qty = Number(e.quantidade) || 0;
+    const color = target && qty > 0 ? (qty / target >= 1 ? '#1f7a3a' : qty / target >= 0.7 ? '#ad8b00' : '#c0392b') : '#888';
+    targetCell.style.color = color;
+    targetCell.innerHTML = target ? `🎯 ${target}${qty > 0 ? ` · <b>${Math.round(qty / target * 100)}%</b>` : ''}` : '<span style="color:#ccc">—</span>';
+  }
+
   body.addEventListener('input', (ev) => {
     const t = ev.target;
     const c = getCtx(t);
@@ -228,11 +244,11 @@ export async function renderPSY(el, ctx) {
     if (t.classList.contains('field-prod')) {
       c.entry.produto = t.value;
       persist();
-      // Re-render target only — cheap approach: full re-render
-      renderPSY(el, ctx);
+      updateTargetCell(c.nome, c.idx);
     } else if (t.classList.contains('field-qty')) {
       c.entry.quantidade = Math.max(0, parseInt(t.value) || 0);
       persist(); updateTotals();
+      updateTargetCell(c.nome, c.idx);
     }
   });
 
@@ -251,26 +267,29 @@ export async function renderPSY(el, ctx) {
     if (c) {
       if (t.classList.contains('btn-inc')) {
         c.entry.quantidade = (Number(c.entry.quantidade) || 0) + 1;
-        persist(); renderPSY(el, ctx);
+        const qtyInp = t.closest('tr').querySelector('.field-qty');
+        if (qtyInp) qtyInp.value = c.entry.quantidade;
+        persist(); updateTotals(); updateTargetCell(c.nome, c.idx);
         return;
       }
       if (t.classList.contains('btn-dec')) {
         c.entry.quantidade = Math.max(0, (Number(c.entry.quantidade) || 0) - 1);
-        persist(); renderPSY(el, ctx);
+        const qtyInp = t.closest('tr').querySelector('.field-qty');
+        if (qtyInp) qtyInp.value = c.entry.quantidade;
+        persist(); updateTotals(); updateTargetCell(c.nome, c.idx);
         return;
       }
       if (t.classList.contains('btn-remove-entry')) {
         c.ls.entries.splice(c.idx, 1);
-        persist(); renderPSY(el, ctx);
+        persist(); renderPSY(el, ctx);  // estrutura mudou → OK perder foco
         return;
       }
     }
-    // Add-entry
     const addRow = t.closest('tr[data-linha-add]');
     if (addRow && t.classList.contains('btn-add-entry')) {
       const nome = addRow.dataset.linhaAdd;
       state.linhas[nome].entries.push(emptyEntry());
-      persist(); renderPSY(el, ctx);
+      persist(); renderPSY(el, ctx);  // nova row inserida → OK perder foco
     }
   });
 
