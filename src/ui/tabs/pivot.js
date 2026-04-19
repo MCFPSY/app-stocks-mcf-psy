@@ -6,9 +6,9 @@
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
 
-// jQuery + jQuery UI + PivotTable.js
-import jQuery from 'jquery';
-window.$ = window.jQuery = jQuery;
+// jQuery global setup MUST come first (side-effect module).
+// Static imports are hoisted, but side-effect imports execute in source order.
+import './_jquery-setup.js';
 import 'jquery-ui-dist/jquery-ui.js';
 import 'pivottable/dist/pivot.css';
 import 'pivottable/dist/pivot.js';
