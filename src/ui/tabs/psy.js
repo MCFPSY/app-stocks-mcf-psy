@@ -1,13 +1,15 @@
-// Registos Produção PSY — grelha "turno-style" (similar ao MCF)
-// - Data + Turno no topo
-// - Uma linha por psy_linha; cada uma com produto (autocomplete) + stepper qtd
-// - Auto-save em localStorage; submit envia uma entry por linha preenchida
+// Registos Produção PSY — grelha turno-style com multi-produto por linha
+// - Data + Turno (T1/T2) no topo
+// - Cada linha: N entries, cada entry = { produto, quantidade }. Botão "+" adiciona. "×" remove (se >1).
+// - Target por (linha, produto) do histórico (psy_benchmark) mostrado junto à qtd
+// - Auto-save em localStorage
 
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
 
 let linhasCache = null;
 let produtosCache = null;
+let benchmarkCache = null;
 
 async function loadLinhas() {
   if (linhasCache) return linhasCache;
@@ -23,60 +25,111 @@ async function loadProdutos() {
   return produtosCache;
 }
 
+async function loadBenchmark() {
+  if (benchmarkCache) return benchmarkCache;
+  const { data } = await supabase.from('psy_benchmark').select('linha, produto, target_qtd');
+  const m = {};
+  for (const r of (data || [])) m[`${r.linha}|${r.produto}`] = r.target_qtd;
+  benchmarkCache = m;
+  return m;
+}
+
 // ==========================================================
-// Estado (localStorage por utilizador)
+// Estado
 // ==========================================================
 function storageKey(userId) { return `mcfpsy-psy-turno-${userId}`; }
 function loadState(userId) { try { const r = localStorage.getItem(storageKey(userId)); return r ? JSON.parse(r) : null; } catch { return null; } }
 function saveState(userId, state) { try { localStorage.setItem(storageKey(userId), JSON.stringify(state)); } catch (e) { console.warn('saveState', e); } }
 function clearState(userId) { localStorage.removeItem(storageKey(userId)); }
 
+function emptyEntry() { return { produto: '', quantidade: 0 }; }
+
 // ==========================================================
 // Render
 // ==========================================================
 export async function renderPSY(el, ctx) {
   el.innerHTML = `<div class="card"><h2>🏭 Registos Produção PSY</h2><p class="sub">A carregar setup do turno...</p></div>`;
-  const [linhas, produtos] = await Promise.all([loadLinhas(), loadProdutos()]);
+  const [linhas, produtos, benchmark] = await Promise.all([loadLinhas(), loadProdutos(), loadBenchmark()]);
+  const produtoSet = new Set(produtos);
 
   const userId = ctx.profile.id;
   const hoje = new Date().toISOString().slice(0, 10);
   let state = loadState(userId);
 
-  // Reset diário: mantém turno mas limpa quantidades e produtos
   if (!state || state.data_registo !== hoje) {
     state = { data_registo: hoje, turno: state?.turno || 'T1', desvio_objetivo: '', linhas: {} };
-    for (const l of linhas) state.linhas[l.nome] = { produto: '', quantidade: 0 };
+    for (const l of linhas) state.linhas[l.nome] = { entries: [emptyEntry()] };
     saveState(userId, state);
   }
 
-  // Garantir que todas as linhas existem no state
+  // Migrar / garantir
   for (const l of linhas) {
-    if (!state.linhas[l.nome]) state.linhas[l.nome] = { produto: '', quantidade: 0 };
+    if (!state.linhas[l.nome]) state.linhas[l.nome] = { entries: [emptyEntry()] };
+    // Migrar formato antigo (flat { produto, quantidade }) → { entries: [...] }
+    if (!state.linhas[l.nome].entries) {
+      const old = state.linhas[l.nome];
+      state.linhas[l.nome] = { entries: [{ produto: old.produto || '', quantidade: old.quantidade || 0 }] };
+    }
   }
 
-  const produtoSet = new Set(produtos);
+  function targetFor(linha, produto) {
+    if (!produto) return null;
+    return benchmark[`${linha}|${produto}`] || null;
+  }
 
   // ==========================================================
   // Build HTML
   // ==========================================================
-  function rowHTML(linha) {
+  function lineHTML(linha) {
     const ls = state.linhas[linha.nome];
-    const qty = ls.quantidade || 0;
-    return `
-      <tr data-linha="${linha.nome}">
-        <td style="padding:10px;font-weight:600;white-space:nowrap">${linha.nome}</td>
-        <td style="padding:8px">
-          <input type="text" class="field-prod" list="psyProdList" value="${ls.produto || ''}" placeholder="Pesquisar tipo de palete..."
-            style="width:100%;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
-        </td>
-        <td style="padding:8px">
-          <div style="display:flex;align-items:center;justify-content:center;gap:6px">
-            <button type="button" class="btn-dec" style="width:44px;height:44px;border:2px solid var(--color-blue);background:#fff;color:var(--color-blue);border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">−</button>
-            <input type="number" class="field-qty" min="0" step="1" value="${qty}" style="width:80px;padding:10px;border:2px solid var(--color-border);border-radius:10px;text-align:center;font-size:1.2rem;font-weight:700">
-            <button type="button" class="btn-inc" style="width:44px;height:44px;border:2px solid var(--color-blue);background:var(--color-blue);color:#fff;border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">+</button>
-          </div>
+    const entries = ls.entries || [emptyEntry()];
+    let html = '';
+
+    for (let idx = 0; idx < entries.length; idx++) {
+      const e = entries[idx];
+      const qty = e.quantidade || 0;
+      const target = targetFor(linha.nome, e.produto);
+      const pctColor = target && qty > 0 ? (qty / target >= 1 ? '#1f7a3a' : qty / target >= 0.7 ? '#ad8b00' : '#c0392b') : '#888';
+
+      const isFirst = idx === 0;
+      const nameCell = isFirst
+        ? `<td style="padding:10px;font-weight:600;white-space:nowrap;vertical-align:top">${linha.nome}</td>`
+        : `<td style="padding:10px"></td>`;
+      const rowBorder = idx > 0 ? 'border-top:1px dashed #e8e8e8' : '';
+
+      html += `
+        <tr data-linha="${linha.nome}" data-eidx="${idx}" style="${rowBorder}">
+          ${nameCell}
+          <td style="padding:8px">
+            <input type="text" class="field-prod" list="psyProdList" value="${(e.produto || '').replace(/"/g, '&quot;')}" placeholder="Tipo de palete..."
+              style="width:100%;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
+          </td>
+          <td style="padding:8px">
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+              <button type="button" class="btn-dec" style="width:44px;height:44px;border:2px solid var(--color-blue);background:#fff;color:var(--color-blue);border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">−</button>
+              <input type="number" class="field-qty" min="0" step="1" value="${qty}" style="width:80px;padding:10px;border:2px solid var(--color-border);border-radius:10px;text-align:center;font-size:1.2rem;font-weight:700">
+              <button type="button" class="btn-inc" style="width:44px;height:44px;border:2px solid var(--color-blue);background:var(--color-blue);color:#fff;border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">+</button>
+            </div>
+          </td>
+          <td style="padding:8px;text-align:center;font-size:.8rem;color:${pctColor};min-width:90px">
+            ${target ? `🎯 ${target}${qty > 0 ? ` · <b>${Math.round(qty / target * 100)}%</b>` : ''}` : '<span style="color:#ccc">—</span>'}
+          </td>
+          <td style="padding:8px;text-align:center;width:40px">
+            ${entries.length > 1 ? `<button type="button" class="btn-remove-entry" title="Remover" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:1.1rem;padding:4px 8px">&times;</button>` : ''}
+          </td>
+        </tr>`;
+    }
+
+    // Add-entry row
+    html += `
+      <tr data-linha-add="${linha.nome}" style="background:#fafafa">
+        <td></td>
+        <td colspan="4" style="padding:4px 8px 10px">
+          <button type="button" class="btn-add-entry" style="padding:4px 14px;background:#fff;border:2px dashed var(--color-blue);color:var(--color-blue);border-radius:8px;font-size:1rem;cursor:pointer;font-weight:700">+</button>
         </td>
       </tr>`;
+
+    return html;
   }
 
   el.innerHTML = `
@@ -85,7 +138,7 @@ export async function renderPSY(el, ctx) {
         <h2 style="margin:0">🏭 Registos Produção PSY</h2>
         <span class="sync-pill" id="psyAutoSave" style="padding:4px 10px;background:#eef7ee;color:#1f7a3a;border-radius:999px;font-size:.75rem;font-weight:600">✓ Guardado</span>
       </div>
-      <p class="sub">Escolhe o tipo de palete e quantidade para cada linha. Auto-save contínuo. Submete tudo no final.</p>
+      <p class="sub">Por defeito uma linha produz um produto, mas podes clicar <b>+</b> para adicionar mais. Target = máximo histórico por turno para a referência.</p>
 
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div class="field" style="min-width:160px">
@@ -106,16 +159,19 @@ export async function renderPSY(el, ctx) {
       </datalist>
 
       <div style="overflow-x:auto">
-        <table id="psyGrelha" style="width:100%;border-collapse:collapse;min-width:600px;font-size:.9rem">
+        <table id="psyGrelha" style="width:100%;border-collapse:collapse;min-width:760px;font-size:.9rem">
           <thead><tr style="background:#f5f5f7">
             <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0;width:120px">Linha</th>
             <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0">Tipo de palete</th>
             <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0;width:240px">Quantidade</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid #e0e0e0;width:120px">Target</th>
+            <th style="padding:10px;border-bottom:2px solid #e0e0e0;width:40px"></th>
           </tr></thead>
-          <tbody id="psyGrelhaBody">${linhas.map(rowHTML).join('')}</tbody>
+          <tbody id="psyGrelhaBody">${linhas.map(lineHTML).join('')}</tbody>
           <tfoot><tr style="background:#f0f7ff;font-weight:700">
             <td colspan="2" style="padding:12px;border-top:2px solid var(--color-blue)">Total</td>
             <td style="padding:12px;text-align:center;border-top:2px solid var(--color-blue)" id="psyTotQty">0 unid</td>
+            <td colspan="2" style="border-top:2px solid var(--color-blue)"></td>
           </tr></tfoot>
         </table>
       </div>
@@ -138,7 +194,7 @@ export async function renderPSY(el, ctx) {
   `;
 
   // ==========================================================
-  // Interactions
+  // Interactions — event delegation
   // ==========================================================
   const body = el.querySelector('#psyGrelhaBody');
   const saveInd = el.querySelector('#psyAutoSave');
@@ -150,21 +206,72 @@ export async function renderPSY(el, ctx) {
   function persist() { saveState(userId, state); flashSave(); }
 
   function updateTotals() {
-    const t = linhas.reduce((s, l) => s + (Number(state.linhas[l.nome]?.quantidade) || 0), 0);
+    let t = 0;
+    for (const l of linhas) for (const e of (state.linhas[l.nome]?.entries || [])) t += Number(e.quantidade) || 0;
     el.querySelector('#psyTotQty').textContent = `${t} unid`;
   }
 
-  body.querySelectorAll('tr[data-linha]').forEach(row => {
+  function getCtx(target) {
+    const row = target.closest('tr[data-linha]');
+    if (!row) return null;
     const nome = row.dataset.linha;
+    const idx = parseInt(row.dataset.eidx);
     const ls = state.linhas[nome];
-    const prodInp = row.querySelector('.field-prod');
-    const qtyInp = row.querySelector('.field-qty');
+    if (!ls?.entries?.[idx]) return null;
+    return { nome, idx, entry: ls.entries[idx], ls };
+  }
 
-    prodInp.addEventListener('input', () => { ls.produto = prodInp.value; persist(); });
-    qtyInp.addEventListener('change', () => { ls.quantidade = Math.max(0, parseInt(qtyInp.value) || 0); qtyInp.value = ls.quantidade; persist(); updateTotals(); });
+  body.addEventListener('input', (ev) => {
+    const t = ev.target;
+    const c = getCtx(t);
+    if (!c) return;
+    if (t.classList.contains('field-prod')) {
+      c.entry.produto = t.value;
+      persist();
+      // Re-render target only — cheap approach: full re-render
+      renderPSY(el, ctx);
+    } else if (t.classList.contains('field-qty')) {
+      c.entry.quantidade = Math.max(0, parseInt(t.value) || 0);
+      persist(); updateTotals();
+    }
+  });
 
-    row.querySelector('.btn-inc').addEventListener('click', () => { ls.quantidade = (Number(ls.quantidade) || 0) + 1; qtyInp.value = ls.quantidade; persist(); updateTotals(); });
-    row.querySelector('.btn-dec').addEventListener('click', () => { ls.quantidade = Math.max(0, (Number(ls.quantidade) || 0) - 1); qtyInp.value = ls.quantidade; persist(); updateTotals(); });
+  body.addEventListener('change', (ev) => {
+    const t = ev.target;
+    const c = getCtx(t);
+    if (!c) return;
+    if (t.classList.contains('field-qty')) {
+      t.value = c.entry.quantidade;
+    }
+  });
+
+  body.addEventListener('click', (ev) => {
+    const t = ev.target;
+    const c = getCtx(t);
+    if (c) {
+      if (t.classList.contains('btn-inc')) {
+        c.entry.quantidade = (Number(c.entry.quantidade) || 0) + 1;
+        persist(); renderPSY(el, ctx);
+        return;
+      }
+      if (t.classList.contains('btn-dec')) {
+        c.entry.quantidade = Math.max(0, (Number(c.entry.quantidade) || 0) - 1);
+        persist(); renderPSY(el, ctx);
+        return;
+      }
+      if (t.classList.contains('btn-remove-entry')) {
+        c.ls.entries.splice(c.idx, 1);
+        persist(); renderPSY(el, ctx);
+        return;
+      }
+    }
+    // Add-entry
+    const addRow = t.closest('tr[data-linha-add]');
+    if (addRow && t.classList.contains('btn-add-entry')) {
+      const nome = addRow.dataset.linhaAdd;
+      state.linhas[nome].entries.push(emptyEntry());
+      persist(); renderPSY(el, ctx);
+    }
   });
 
   el.querySelector('#psyDataReg').addEventListener('change', (e) => { state.data_registo = e.target.value || hoje; persist(); });
@@ -184,24 +291,21 @@ export async function renderPSY(el, ctx) {
     const rows = [];
     const unknownProds = [];
     for (const l of linhas) {
-      const ls = state.linhas[l.nome];
-      const q = Number(ls.quantidade) || 0;
-      const prod = (ls.produto || '').trim();
-      if (q <= 0 || !prod) continue;
-      if (!produtoSet.has(prod)) { unknownProds.push(`${l.nome} → "${prod}"`); continue; }
-      rows.push({
-        data_registo: dataReg,
-        linha: l.nome,
-        turno,
-        produto: prod,
-        quantidade: q,
-        operador_id: ctx.profile.id,
-        ...(state.desvio_objetivo?.trim() ? { desvio_objetivo: state.desvio_objetivo.trim() } : {}),
-      });
+      for (const e of (state.linhas[l.nome]?.entries || [])) {
+        const q = Number(e.quantidade) || 0;
+        const prod = (e.produto || '').trim();
+        if (q <= 0 || !prod) continue;
+        if (!produtoSet.has(prod)) { unknownProds.push(`${l.nome} → "${prod}"`); continue; }
+        rows.push({
+          data_registo: dataReg, linha: l.nome, turno, produto: prod, quantidade: q,
+          operador_id: ctx.profile.id,
+          ...(state.desvio_objetivo?.trim() ? { desvio_objetivo: state.desvio_objetivo.trim() } : {}),
+        });
+      }
     }
 
-    if (unknownProds.length) { toast(`Produtos desconhecidos: ${unknownProds.join('; ')}`, 'error'); return; }
-    if (rows.length === 0) { toast('Nada para submeter. Indica produto + quantidade em pelo menos uma linha.', 'error'); return; }
+    if (unknownProds.length) { toast(`Produtos desconhecidos: ${unknownProds.slice(0, 3).join('; ')}${unknownProds.length > 3 ? '...' : ''}`, 'error'); return; }
+    if (rows.length === 0) { toast('Nada para submeter.', 'error'); return; }
 
     const totQty = rows.reduce((s, r) => s + r.quantidade, 0);
     if (!confirm(`Submeter ${rows.length} registo(s) — ${totQty} unidades totais?`)) return;
@@ -210,19 +314,17 @@ export async function renderPSY(el, ctx) {
     btn.disabled = true; btn.textContent = 'A gravar...';
     const { error } = await supabase.from('psy_producao').insert(rows);
     btn.disabled = false; btn.textContent = '✓ Submeter turno';
-
     if (error) { toast('Erro: ' + error.message, 'error'); return; }
 
     toast(`✓ ${rows.length} registo(s) PSY gravados`, 'success');
 
-    // Limpar quantidades + desvio, manter setup (produto) como no MCF
-    for (const l of linhas) state.linhas[l.nome].quantidade = 0;
+    // Limpar qtds + desvio, manter produtos
+    for (const l of linhas) for (const e of (state.linhas[l.nome]?.entries || [])) e.quantidade = 0;
     state.desvio_objetivo = '';
-    persist();
-    renderPSY(el, ctx);
+    persist(); renderPSY(el, ctx);
   });
 
-  // Recent records (igual ao anterior, agrupa por data/linha/turno)
+  // Recent records
   async function loadRecent() {
     const { data: recent } = await supabase
       .from('psy_producao')
