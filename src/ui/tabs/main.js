@@ -420,7 +420,10 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
 
   const [semanalRes, prodRes] = await Promise.all([
     supabase.from('v_psy_semanal').select('*').in('semana', allWeekKeys),
-    supabase.from('psy_producao').select('linha, turno, data_registo, quantidade, produto, desvio_objetivo')
+    // PSY agora está em movimentos (empresa='PSY'), quantidade = malotes
+    supabase.from('movimentos').select('linha, turno, data_registo, malotes, produto_stock, desvio_objetivo')
+      .eq('empresa', 'PSY').eq('tipo', 'entrada_producao')
+      .eq('estornado', false).eq('duvida_resolvida', true)
       .gte('data_registo', weekStartIso).lte('data_registo', weekEndIso),
   ]);
   if (semanalRes.error) { el.innerHTML = `<p>Erro: ${semanalRes.error.message}</p>`; return; }
@@ -450,13 +453,13 @@ async function renderPSY(el, pastWeeks, currentWeek, days, dayIso) {
     const pastAccReal = pastWeekly.reduce((s,c) => s+c.real, 0);
 
     const dailyCells = days.map(d => ({
-      real: movs.filter(m => match(m) && m.data_registo === d.iso).reduce((s,m) => s + Number(m.quantidade || 0), 0),
+      real: movs.filter(m => match(m) && m.data_registo === d.iso).reduce((s,m) => s + Number(m.malotes || 0), 0),
       plano: 0,
     }));
     const weekReal = dailyCells.reduce((s,c) => s+c.real, 0);
     const todayMovs = movs.filter(m => match(m) && m.data_registo === dayIso);
-    const todayReal = todayMovs.reduce((s,m) => s + Number(m.quantidade || 0), 0);
-    const todayProduto = todayMovs[0]?.produto || '';
+    const todayReal = todayMovs.reduce((s,m) => s + Number(m.malotes || 0), 0);
+    const todayProduto = todayMovs[0]?.produto_stock || '';
     const todayCausas = [...new Set(todayMovs.map(m => m.desvio_objetivo).filter(Boolean))].join(' · ');
 
     return { linha: { nome: label, hc: rd.hc, sinal: '+' }, pastWeekly, pastAccReal, pastAccPlan: 0, dailyCells, weekReal, weekPlan: 0, todayReal, todayPlan: 0, todayProduto, todayCausas };

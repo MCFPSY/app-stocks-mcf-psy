@@ -6,6 +6,7 @@
 
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
+import { addMovimento } from '../../offline.js';
 
 let linhasCache = null;
 let produtosCache = null;
@@ -315,9 +316,13 @@ export async function renderPSY(el, ctx) {
         const prod = (e.produto || '').trim();
         if (q <= 0 || !prod) continue;
         if (!produtoSet.has(prod)) { unknownProds.push(`${l.nome} → "${prod}"`); continue; }
+        // Schema unificado: PSY escreve em movimentos com empresa='PSY'
+        // malotes = quantidade (1 palete = 1 unidade), pecas_por_malote = 1, m3 = 0
         rows.push({
-          data_registo: dataReg, linha: l.nome, turno, produto: prod, quantidade: q,
-          operador_id: ctx.profile.id,
+          tipo: 'entrada_producao', empresa: 'PSY',
+          produto_stock: prod, malotes: q, pecas_por_malote: 1, m3: 0,
+          data_registo: dataReg, linha: l.nome, turno,
+          operador_id: ctx.profile.id, incerteza: false, duvida_resolvida: true,
           ...(state.desvio_objetivo?.trim() ? { desvio_objetivo: state.desvio_objetivo.trim() } : {}),
         });
       }
@@ -326,16 +331,19 @@ export async function renderPSY(el, ctx) {
     if (unknownProds.length) { toast(`Produtos desconhecidos: ${unknownProds.slice(0, 3).join('; ')}${unknownProds.length > 3 ? '...' : ''}`, 'error'); return; }
     if (rows.length === 0) { toast('Nada para submeter.', 'error'); return; }
 
-    const totQty = rows.reduce((s, r) => s + r.quantidade, 0);
+    const totQty = rows.reduce((s, r) => s + r.malotes, 0);
     if (!confirm(`Submeter ${rows.length} registo(s) — ${totQty} unidades totais?`)) return;
 
     const btn = el.querySelector('#psySubmitBtn');
     btn.disabled = true; btn.textContent = 'A gravar...';
-    const { error } = await supabase.from('psy_producao').insert(rows);
+    let online = 0, offline = 0;
+    for (const r of rows) {
+      const res = await addMovimento(r);
+      if (res.offline) offline++; else online++;
+    }
     btn.disabled = false; btn.textContent = '✓ Submeter turno';
-    if (error) { toast('Erro: ' + error.message, 'error'); return; }
 
-    toast(`✓ ${rows.length} registo(s) PSY gravados`, 'success');
+    toast(offline > 0 ? `✓ ${online} submetidos, ${offline} em fila offline` : `✓ ${online} registo(s) PSY gravados`, 'success');
 
     // Limpar qtds + desvio, manter produtos
     for (const l of linhas) for (const e of (state.linhas[l.nome]?.entries || [])) e.quantidade = 0;
@@ -343,11 +351,13 @@ export async function renderPSY(el, ctx) {
     persist(); renderPSY(el, ctx);
   });
 
-  // Recent records
+  // Recent records (agora de movimentos com empresa='PSY')
   async function loadRecent() {
     const { data: recent } = await supabase
-      .from('psy_producao')
-      .select('*, profiles!operador_id(nome)')
+      .from('movimentos')
+      .select('id, data_registo, linha, turno, produto_stock, malotes, criado_em, profiles!operador_id(nome)')
+      .eq('empresa', 'PSY').eq('tipo', 'entrada_producao')
+      .eq('estornado', false)
       .order('criado_em', { ascending: false })
       .limit(40);
     const list = el.querySelector('#psyRecentList');
@@ -361,18 +371,18 @@ export async function renderPSY(el, ctx) {
     list.innerHTML = [...groups.values()].map(g => `
       <div style="padding:14px;border:1px solid #e0e0e0;border-radius:12px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-          <div style="font-weight:600">${g.data_registo} · ${g.turno}</div>
+          <div style="font-weight:600">${g.data_registo} · ${g.turno || '—'}</div>
           <div style="font-size:.8rem;color:#6e6e73">${g.profiles?.nome || '—'} · ${new Date(g.criado_em).toLocaleString('pt-PT')}</div>
         </div>
         ${g.items.map(it => `
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid #f0f0f3;gap:8px">
             <span style="color:#6e6e73;min-width:90px">${it.linha}</span>
-            <span style="flex:1">${it.produto}</span>
-            <b style="color:var(--color-blue)">${it.quantidade}</b>
+            <span style="flex:1">${it.produto_stock}</span>
+            <b style="color:var(--color-blue)">${it.malotes}</b>
           </div>
         `).join('')}
         <div style="display:flex;justify-content:flex-end;padding-top:8px;border-top:1px solid #d2d2d7;margin-top:4px;font-weight:700">
-          Total: ${g.items.reduce((s,it) => s + it.quantidade, 0)} unidades
+          Total: ${g.items.reduce((s,it) => s + Number(it.malotes||0), 0)} unidades
         </div>
       </div>
     `).join('');

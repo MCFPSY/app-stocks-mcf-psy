@@ -164,17 +164,22 @@ async function renderMadeira(el) {
 
 // ====== PALETES (PSY production aggregated) ======
 async function renderPaletes(el) {
+  // PSY agora está em movimentos (empresa='PSY'), malotes = quantidade de paletes
   const { data, error } = await supabase
-    .from('psy_producao')
-    .select('produto, linha, quantidade');
+    .from('movimentos')
+    .select('produto_stock, linha, malotes')
+    .eq('empresa', 'PSY').eq('tipo', 'entrada_producao')
+    .eq('estornado', false).eq('duvida_resolvida', true);
 
   if (error) { el.innerHTML = `<p class="sub">Erro: ${error.message}</p>`; return; }
 
   // Aggregate by produto
   const map = new Map();
   for (const r of (data || [])) {
-    if (!map.has(r.produto)) map.set(r.produto, { produto: r.produto, quantidade: 0 });
-    map.get(r.produto).quantidade += Number(r.quantidade || 0);
+    const produto = r.produto_stock;
+    if (!produto) continue;
+    if (!map.has(produto)) map.set(produto, { produto, quantidade: 0 });
+    map.get(produto).quantidade += Number(r.malotes || 0);
   }
   const allRows = [...map.values()].sort((a, b) => a.produto.localeCompare(b.produto));
   const totalQty = allRows.reduce((s, r) => s + r.quantidade, 0);
