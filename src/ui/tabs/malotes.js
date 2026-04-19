@@ -114,11 +114,17 @@ export async function renderMalotes(el, ctx) {
 
   // Reset diário
   if (!state || state.data_registo !== hoje) {
-    state = { data_registo: hoje, turno: state?.turno || 'T1', linhas: {} };
+    state = { data_registo: hoje, linhas: {} };
     for (const l of linhasOrdenadas) {
       state.linhas[l.nome] = l.sinal === '-' ? { entries: [emptyEntry()] } : { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
     }
     saveState(userId, state);
+  }
+
+  // Helper: deriva turno do nome da linha (T1/T2/T3 inerente) ou null
+  function deriveTurno(nome) {
+    const m = nome?.match(/\b(T[123])\b/);
+    return m ? m[1] : null;
   }
 
   // Garantir + migrar
@@ -396,14 +402,6 @@ export async function renderMalotes(el, ctx) {
           <label>Data</label>
           <input type="date" id="dataReg" value="${state.data_registo}" style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem">
         </div>
-        <div class="field" style="min-width:120px">
-          <label>Turno</label>
-          <select id="turnoSel" style="padding:10px 14px;border:2px solid var(--color-border);border-radius:10px;font-size:.95rem">
-            <option value="T1" ${state.turno==='T1'?'selected':''}>T1</option>
-            <option value="T2" ${state.turno==='T2'?'selected':''}>T2</option>
-            <option value="T3" ${state.turno==='T3'?'selected':''}>T3</option>
-          </select>
-        </div>
       </div>
       <div style="overflow-x:auto">
         <table id="grelha" style="width:100%;border-collapse:collapse;min-width:900px;font-size:.9rem">
@@ -651,7 +649,6 @@ export async function renderMalotes(el, ctx) {
   }
 
   el.querySelector('#dataReg').addEventListener('change', (e) => { state.data_registo = e.target.value || hoje; persist(); });
-  el.querySelector('#turnoSel').addEventListener('change', (e) => { state.turno = e.target.value; persist(); });
 
   el.querySelector('#resetBtn').addEventListener('click', () => {
     if (!confirm('Apagar setup e quantidades atuais?')) return;
@@ -679,7 +676,7 @@ export async function renderMalotes(el, ctx) {
           produto_stock: p.produto_stock, malotes: m, pecas_por_malote: np,
           m3: +(vol1*m*np).toFixed(4),
           operador_id: ctx.profile.id, incerteza: false, duvida_resolvida: true,
-          data_registo: state.data_registo, linha: l.nome, turno: state.turno,
+          data_registo: state.data_registo, linha: l.nome, turno: deriveTurno(l.nome),
         };
         if (e.produto_origem) entry.produto_origem = e.produto_origem;
         if (e.multiplicador && e.multiplicador > 0) entry.multiplicador = e.multiplicador;
