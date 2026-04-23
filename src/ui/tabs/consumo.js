@@ -40,14 +40,31 @@ export async function renderConsumo(el, ctx) {
 
   const now = new Date();
   const cw = isoWeek(now);
-  let selYear = cw.year, selWeek = cw.week;
+  // Período: tipo (day/week/month/total) + valor selecionado
+  let period = { type: 'week', year: cw.year, week: cw.week, day: now.toISOString().slice(0, 10), month: now.toISOString().slice(0, 7) };
 
-  await render(selYear, selWeek);
+  // Calcula from/to ISO dates com base no period state
+  function periodRange() {
+    if (period.type === 'day') return { from: period.day, to: period.day, label: period.day };
+    if (period.type === 'week') {
+      const days = daysOfWeek(period.year, period.week);
+      return { from: days[0], to: days[6], label: `${weekKey(period.year, period.week)} (${days[0]} → ${days[6]})` };
+    }
+    if (period.type === 'month') {
+      const [y, m] = period.month.split('-').map(Number);
+      const from = `${period.month}-01`;
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const to = `${period.month}-${String(lastDay).padStart(2, '0')}`;
+      return { from, to, label: period.month };
+    }
+    // total
+    return { from: '2020-01-01', to: '2099-12-31', label: 'Desde o início' };
+  }
 
-  async function render(year, week) {
-    const days = daysOfWeek(year, week);
-    const weekStart = days[0];
-    const weekEnd = days[6];
+  await render();
+
+  async function render() {
+    const { from: weekStart, to: weekEnd, label: periodLabel } = periodRange();
 
     // Load all data in parallel
     const [configRes, gamasRes, matrizRes, linhasRes, movsRes, mpRes] = await Promise.all([
@@ -228,10 +245,16 @@ export async function renderConsumo(el, ctx) {
       <div class="card" style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px">
           <h2 style="margin:0">Consumo Rolaria</h2>
-          <div style="display:flex;gap:12px;align-items:center">
-            <label style="font-size:.85rem;color:#666">Semana</label>
-            <input type="week" id="crWeekPicker" value="${weekKey(year, week)}"
-              style="padding:8px 12px;border:2px solid var(--color-border);border-radius:10px;font-size:.9rem">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div id="crPeriodToggle" style="display:inline-flex;background:#f5f5f7;border-radius:10px;padding:2px">
+              ${['day','week','month','total'].map(t => `
+                <button type="button" data-period="${t}" style="padding:6px 14px;border:none;background:${period.type===t?'#fff':'transparent'};color:${period.type===t?'var(--color-blue)':'#666'};border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;box-shadow:${period.type===t?'0 1px 3px rgba(0,0,0,.1)':'none'}">${({day:'Dia',week:'Semana',month:'Mês',total:'Total'})[t]}</button>
+              `).join('')}
+            </div>
+            ${period.type === 'day' ? `<input type="date" id="crDayPicker" value="${period.day}" style="padding:8px 12px;border:2px solid var(--color-border);border-radius:10px;font-size:.9rem">` : ''}
+            ${period.type === 'week' ? `<input type="week" id="crWeekPicker" value="${weekKey(period.year, period.week)}" style="padding:8px 12px;border:2px solid var(--color-border);border-radius:10px;font-size:.9rem">` : ''}
+            ${period.type === 'month' ? `<input type="month" id="crMonthPicker" value="${period.month}" style="padding:8px 12px;border:2px solid var(--color-border);border-radius:10px;font-size:.9rem">` : ''}
+            ${period.type === 'total' ? `<span style="font-size:.85rem;color:#666">${periodLabel}</span>` : ''}
           </div>
         </div>
 
@@ -329,20 +352,37 @@ export async function renderConsumo(el, ctx) {
             </tbody>
           </table>
         </div>
-        ${movs.length === 0 ? '<p style="text-align:center;color:#888;margin:16px 0">Sem registos nesta semana</p>' : ''}
+        ${movs.length === 0 ? `<p style="text-align:center;color:#888;margin:16px 0">Sem registos no período (${periodLabel})</p>` : ''}
       </div>
     `;
 
     // ========================================================
     // Event handlers
     // ========================================================
-    el.querySelector('#crWeekPicker').addEventListener('change', (e) => {
-      const val = e.target.value; // "YYYY-WNN"
+    // Toggle período (Dia/Semana/Mês/Total)
+    el.querySelector('#crPeriodToggle')?.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('button[data-period]');
+      if (!btn) return;
+      period.type = btn.dataset.period;
+      render();
+    });
+    el.querySelector('#crDayPicker')?.addEventListener('change', (e) => {
+      if (!e.target.value) return;
+      period.day = e.target.value;
+      render();
+    });
+    el.querySelector('#crWeekPicker')?.addEventListener('change', (e) => {
+      const val = e.target.value;
       if (!val) return;
       const [y, wStr] = val.split('-W');
-      selYear = parseInt(y);
-      selWeek = parseInt(wStr);
-      render(selYear, selWeek);
+      period.year = parseInt(y);
+      period.week = parseInt(wStr);
+      render();
+    });
+    el.querySelector('#crMonthPicker')?.addEventListener('change', (e) => {
+      if (!e.target.value) return;
+      period.month = e.target.value;
+      render();
     });
 
     // Ratio save
@@ -355,7 +395,7 @@ export async function renderConsumo(el, ctx) {
         const { error } = await supabase.from('consumo_config').update({ valor: newVal, atualizado_em: new Date().toISOString() }).eq('chave', 'ratio_ton_m3');
         if (error) { toast(`Erro: ${error.message}`, 'error'); return; }
         toast('Ratio atualizado', 'success');
-        render(selYear, selWeek);
+        render();
       });
     }
   }
