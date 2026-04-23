@@ -106,13 +106,23 @@ export async function renderTransfer(el, ctx) {
     });
     if (!ok) return;
     const btn = $('subBtn'); btn.disabled=true; btn.textContent='A gravar...';
-    const res = await addMovimento({
-      tipo:'transferencia', empresa:'MCF', empresa_destino:'PSY',
+
+    // Gera 2 rows linkadas (saída MCF + entrada PSY). IDs gerados no cliente
+    // para que B possa referenciar A mesmo offline.
+    const idA = crypto.randomUUID();
+    const idB = crypto.randomUUID();
+    const base = {
+      tipo:'transferencia',
       produto_stock:p.produto_stock, malotes:nm, pecas_por_malote:p.pecas_por_malote, m3:m3v,
       operador_id:ctx.profile.id, incerteza:inc, duvida_resolvida:!inc,
-    });
+      data_registo: new Date().toISOString().slice(0,10),
+    };
+    const resA = await addMovimento({ ...base, id:idA, empresa:'MCF', empresa_destino:'PSY' });
+    const resB = await addMovimento({ ...base, id:idB, empresa:'PSY', empresa_destino:'MCF', movimento_origem_id:idA });
+    const offline = resA.offline || resB.offline;
+
     btn.disabled=false; btn.textContent='→ Transferir';
-    toast(res.offline ? '📤 Guardado offline — sincroniza quando houver rede' : '✓ Transferência registada','success');
+    toast(offline ? '📤 Guardado offline — sincroniza quando houver rede' : '✓ Transferência registada (2 movimentos)','success');
     nMal.value=''; recalc(); onProd();
     window.dispatchEvent(new CustomEvent('sync-done'));
   };
