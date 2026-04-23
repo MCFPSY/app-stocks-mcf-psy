@@ -141,6 +141,8 @@ export async function renderMovimentos(el, ctx) {
             <th style="text-align:right;padding:10px;border-bottom:2px solid #e0e0e0">Malotes</th>
             <th style="text-align:right;padding:10px;border-bottom:2px solid #e0e0e0">Peças</th>
             <th style="text-align:right;padding:10px;border-bottom:2px solid #e0e0e0">m³</th>
+            <th style="text-align:right;padding:10px;border-bottom:2px solid #e0e0e0">Tons rolaria</th>
+            <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0">Gama</th>
           </tr></thead>
           <tbody>
             ${data.map(m => `<tr>
@@ -154,6 +156,8 @@ export async function renderMovimentos(el, ctx) {
               <td style="padding:8px;text-align:right;border-bottom:1px solid #f0f0f3">${Number(m.malotes).toFixed(2)}</td>
               <td style="padding:8px;text-align:right;border-bottom:1px solid #f0f0f3">${Number(m.total_pecas || 0).toFixed(0)}</td>
               <td style="padding:8px;text-align:right;border-bottom:1px solid #f0f0f3">${Number(m.m3 || 0).toFixed(3)}</td>
+              <td style="padding:8px;text-align:right;border-bottom:1px solid #f0f0f3;color:${m.rolaria_tons ? '#1d1d1f' : '#ccc'}">${m.rolaria_tons ? Number(m.rolaria_tons).toFixed(2) : '—'}</td>
+              <td style="padding:8px;border-bottom:1px solid #f0f0f3;font-size:.75rem;color:#666">${m.rolaria_gama || '—'}</td>
             </tr>`).join('')}
           </tbody>
           <tfoot><tr style="background:#f0f7ff;font-weight:700">
@@ -161,17 +165,20 @@ export async function renderMovimentos(el, ctx) {
             <td style="padding:10px;text-align:right;border-top:2px solid var(--color-blue)">${totMalotes.toFixed(2)}</td>
             <td style="padding:10px;text-align:right;border-top:2px solid var(--color-blue)">${totPecas.toFixed(0)}</td>
             <td style="padding:10px;text-align:right;border-top:2px solid var(--color-blue)">${totM3.toFixed(3)}</td>
+            <td style="padding:10px;text-align:right;border-top:2px solid var(--color-blue)">${data.reduce((s, m) => s + Number(m.rolaria_tons || 0), 0).toFixed(2)}</td>
+            <td style="border-top:2px solid var(--color-blue)"></td>
           </tr></tfoot>
         </table>
       </div>
     `;
 
     el.querySelector('#exp').onclick = () => {
-      const csv = ['data,hora,tipo,empresa,destino,linha,turno,produto,malotes,pecas,m3'].concat(
+      const csv = ['data,hora,tipo,empresa,destino,linha,turno,produto,malotes,pecas,m3,rolaria_tons,rolaria_gama'].concat(
         data.map(m => [
           m.data_registo || '', new Date(m.criado_em).toLocaleString('pt-PT'), m.tipo, m.empresa,
           m.empresa_destino || '', m.linha || '', m.turno || '', `"${m.produto_stock}"`,
-          m.malotes, m.total_pecas || 0, m.m3 || 0
+          m.malotes, m.total_pecas || 0, m.m3 || 0,
+          m.rolaria_tons || '', `"${m.rolaria_gama || ''}"`,
         ].join(','))
       ).join('\n');
       const a = document.createElement('a');

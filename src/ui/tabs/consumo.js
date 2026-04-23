@@ -67,13 +67,15 @@ export async function renderConsumo(el, ctx) {
     const { from: weekStart, to: weekEnd, label: periodLabel } = periodRange();
 
     // Load all data in parallel
+    // Nota: rolaria_tons e rolaria_gama lêem-se diretamente de movimentos
+    // (persistidos ao submeter). Fallback recomputa se NULL (movimentos antigos).
     const [configRes, gamasRes, matrizRes, linhasRes, movsRes, mpRes] = await Promise.all([
       supabase.from('consumo_config').select('*'),
       supabase.from('rolaria_gamas').select('*').eq('ativo', true),
       supabase.from('rolaria_matriz_principal').select('*'),
       supabase.from('mcf_linhas').select('*').eq('ativo', true).order('ordem'),
       supabase.from('movimentos')
-        .select('id, linha, turno, data_registo, produto_stock, m3, malotes')
+        .select('id, linha, turno, data_registo, produto_stock, m3, malotes, rolaria_tons, rolaria_gama')
         .eq('tipo', 'entrada_producao').eq('empresa', 'MCF')
         .eq('estornado', false).eq('duvida_resolvida', true)
         .not('linha', 'is', null)
@@ -111,6 +113,19 @@ export async function renderConsumo(el, ctx) {
     // First pass: determine direct gamas (principal + charriot [B])
     const movGamas = new Map(); // mov.id -> { gama, tons }
 
+    // Pre-pass: para movimentos com rolaria_tons/gama persistidos no DB, usa esses
+    // valores (autoritativos). Senão cai para o algoritmo dinâmico nas passes 1+2.
+    for (const m of movs) {
+      if (m.rolaria_tons != null || m.rolaria_gama != null) {
+        const gama = m.rolaria_gama ? gamas.find(g => g.nome === m.rolaria_gama) : null;
+        movGamas.set(m.id, {
+          gama,
+          tons: Number(m.rolaria_tons) || 0,
+          reason: 'Persistido na BD',
+        });
+      }
+    }
+
     function lookupMatrizPrincipal(comp, larg, esp, costaneiroEsp) {
       for (const row of matriz) {
         if (row.comp_produto_mm !== comp) continue;
@@ -142,7 +157,8 @@ export async function renderConsumo(el, ctx) {
 
     const isBLine = (nome) => / \(B\)$/.test(nome);
 
-    // Pass 1: principal + charriot [B]
+    // Pass 1: principal + charriot [B] — também popula os maps de inheritance
+    // (inclusive para os já-persistidos, para que aproveitamentos saibam herdar)
     for (const m of movs) {
       const linha = linhaByNome[m.linha];
       if (!linha) continue;
@@ -150,12 +166,23 @@ export async function renderConsumo(el, ctx) {
       const tk = turnoKey(m);
 
       if (linha.tipo_benchmark === 'principal' && !isBLine(linha.nome)) {
+        // Se já persistido, só popula maps de inheritance a partir da gama guardada
+        if (movGamas.has(m.id)) {
+          const g = movGamas.get(m.id).gama;
+          if (g && !principalGamaPerTurno.has(tk)) principalGamaPerTurno.set(tk, g);
+          continue;
+        }
         if (!p) { movGamas.set(m.id, { gama: null, tons: 0, reason: 'Produto não encontrado' }); continue; }
         const costEsp = aprovProdPerTurno.get(tk) || null;
         const gama = lookupMatrizPrincipal(p.comprimento, p.largura, p.espessura, costEsp);
         movGamas.set(m.id, { gama, tons: m.m3 * ratio, reason: gama ? null : 'Sem match na matriz' });
         if (gama && !principalGamaPerTurno.has(tk)) principalGamaPerTurno.set(tk, gama);
       } else if (linha.tipo_benchmark === 'charriot' && m.linha === 'Linha charriot [B]') {
+        if (movGamas.has(m.id)) {
+          const g = movGamas.get(m.id).gama;
+          if (g && !charriotBGamaPerTurno.has(tk)) charriotBGamaPerTurno.set(tk, g);
+          continue;
+        }
         if (!p) { movGamas.set(m.id, { gama: null, tons: 0, reason: 'Produto não encontrado' }); continue; }
         const gama = lookupCharriotGama(p.comprimento, 'charriot_barrotes');
         movGamas.set(m.id, { gama, tons: m.m3 * ratio, reason: gama ? null : 'Sem gama barrotes' });

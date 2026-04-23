@@ -7,6 +7,7 @@
 import { supabase } from '../../supabase.js';
 import { toast } from '../app.js';
 import { addMovimento, cachePut, cacheGet } from '../../offline.js';
+import { computeRolariaPerEntry, computeWeeklyFallbackGama } from '../../rolaria.js';
 
 // =========================================================
 // Caches
@@ -656,7 +657,9 @@ export async function renderMalotes(el, ctx) {
   });
 
   el.querySelector('#submitBtn').addEventListener('click', async () => {
-    const entriesToSubmit = [];
+    const entriesToSubmit = []; // "movimentos" entrada_producao
+    const saidasRetestagem = []; // ajuste_saida das peças origem retestadas
+    const sobrasReapov = []; // entrada_producao das sobras reaproveitáveis
 
     for (const l of linhasOrdenadas) {
       const ls = state.linhas[l.nome];
@@ -681,16 +684,104 @@ export async function renderMalotes(el, ctx) {
         if (e.produto_origem) entry.produto_origem = e.produto_origem;
         if (e.multiplicador && e.multiplicador > 0) entry.multiplicador = e.multiplicador;
         entriesToSubmit.push(entry);
+
+        // Retestagem (sinal='-' com produto_origem): gerar saida + sobra
+        if (l.sinal === '-' && e.produto_origem && e.multiplicador > 0) {
+          const pOrigem = findMp(e.produto_origem);
+          if (pOrigem) {
+            const outputPieces = m * np;
+            const sourcePieces = outputPieces / e.multiplicador;
+            const sourceMalotes = sourcePieces / (pOrigem.pecas_por_malote || 1);
+            const volOrigem1 = (pOrigem.comprimento/1000)*(pOrigem.largura/1000)*(pOrigem.espessura/1000);
+            saidasRetestagem.push({
+              tipo: 'ajuste_saida', empresa: 'MCF',
+              produto_stock: pOrigem.produto_stock,
+              malotes: +sourceMalotes.toFixed(3),
+              pecas_por_malote: pOrigem.pecas_por_malote || 1,
+              m3: +(volOrigem1 * sourcePieces).toFixed(4),
+              operador_id: ctx.profile.id, incerteza: false, duvida_resolvida: true,
+              data_registo: state.data_registo, linha: l.nome, turno: deriveTurno(l.nome),
+              justificacao: `Retestagem em ${l.nome} → ${m} malotes de ${p.produto_stock}`,
+            });
+
+            // Sobra reaproveitável (se aplicável)
+            const sobra = calcSobra(e.produto_stock, e.produto_origem, e.multiplicador);
+            if (sobra?.reaproveitavel && sobra.sku) {
+              const pSobra = findMp(sobra.sku) || { produto_stock: sobra.sku, pecas_por_malote: 1 };
+              const sobraComp = parseInt(sobra.sku.split('x')[0]);
+              const sobraLarg = parseInt(sobra.sku.split('x')[1]);
+              const sobraEsp = parseInt(sobra.sku.split('x')[2]);
+              const volSobra1 = (sobraComp/1000)*(sobraLarg/1000)*(sobraEsp/1000);
+              sobrasReapov.push({
+                tipo: 'entrada_producao', empresa: 'MCF',
+                produto_stock: pSobra.produto_stock,
+                malotes: +sourceMalotes.toFixed(3),
+                pecas_por_malote: pOrigem.pecas_por_malote || 1,
+                m3: +(volSobra1 * sourcePieces).toFixed(4),
+                operador_id: ctx.profile.id, incerteza: false, duvida_resolvida: true,
+                data_registo: state.data_registo, linha: l.nome, turno: deriveTurno(l.nome),
+                justificacao: `Sobra reaproveitável de ${e.produto_origem}`,
+              });
+            }
+          }
+        }
       }
     }
 
     if (entriesToSubmit.length === 0) { toast('Sem malotes para submeter.', 'error'); return; }
-    if (!confirm(`Submeter ${entriesToSubmit.length} registo(s) — total ${entriesToSubmit.reduce((s,e)=>s+e.m3,0).toFixed(2)} m³?`)) return;
+
+    // Calcular rolaria (tons + gama) para cada movimento principal usando o algoritmo partilhado
+    try {
+      // Carregar lookups
+      const [gamasRes, matrizRes, configRes] = await Promise.all([
+        supabase.from('rolaria_gamas').select('*').eq('ativo', true),
+        supabase.from('rolaria_matriz_principal').select('*'),
+        supabase.from('consumo_config').select('valor').eq('chave', 'ratio_ton_m3').maybeSingle(),
+      ]);
+      const ratio = Number(configRes.data?.valor) || 2.129925;
+      const gamas = gamasRes.data || [];
+      const matriz = matrizRes.data || [];
+
+      // Fetch principal movimentos da semana (para fallback weekly)
+      const d = new Date(state.data_registo + 'T00:00:00Z');
+      const dow = d.getUTCDay() || 7;
+      const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - (dow - 1));
+      const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+      const { data: weekMovs } = await supabase.from('movimentos')
+        .select('linha, turno, data_registo, produto_stock, m3')
+        .eq('tipo', 'entrada_producao').eq('empresa', 'MCF')
+        .eq('estornado', false).eq('duvida_resolvida', true)
+        .not('linha', 'is', null)
+        .gte('data_registo', mon.toISOString().slice(0,10))
+        .lte('data_registo', sun.toISOString().slice(0,10));
+
+      const fallback = computeWeeklyFallbackGama(
+        [...(weekMovs || []), ...entriesToSubmit],
+        { ratio, gamas, matriz, linhas: linhasOrdenadas, mp }
+      );
+      const rolariaMap = computeRolariaPerEntry(entriesToSubmit, {
+        ratio, gamas, matriz, linhas: linhasOrdenadas, mp, weeklyFallbackGama: fallback,
+      });
+
+      // Injetar rolaria_tons + rolaria_gama em cada entry
+      for (let i = 0; i < entriesToSubmit.length; i++) {
+        const info = rolariaMap.get(i);
+        if (info && info.tons > 0) {
+          entriesToSubmit[i].rolaria_tons = +info.tons.toFixed(3);
+          if (info.gama) entriesToSubmit[i].rolaria_gama = info.gama;
+        }
+      }
+    } catch (err) {
+      console.warn('Erro a calcular rolaria (prossegue sem):', err);
+    }
+
+    const totalToSubmit = entriesToSubmit.length + saidasRetestagem.length + sobrasReapov.length;
+    if (!confirm(`Submeter ${totalToSubmit} registo(s) (${entriesToSubmit.length} produção + ${saidasRetestagem.length} saídas retestagem + ${sobrasReapov.length} sobras) — total ${entriesToSubmit.reduce((s,e)=>s+e.m3,0).toFixed(2)} m³?`)) return;
 
     const btn = el.querySelector('#submitBtn');
     btn.disabled = true; btn.textContent = 'A submeter...';
     let offline = 0, online = 0;
-    for (const entry of entriesToSubmit) {
+    for (const entry of [...entriesToSubmit, ...saidasRetestagem, ...sobrasReapov]) {
       const res = await addMovimento(entry);
       if (res.offline) offline++; else online++;
     }
