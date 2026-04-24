@@ -12,6 +12,7 @@ import { renderConsumo } from './tabs/consumo.js';
 import { renderPivot } from './tabs/pivot.js';
 import { canViewTab } from '../permissions.js';
 import { getPendingCount, sync } from '../offline.js';
+import { startRealtime, stopRealtime } from '../realtime.js';
 
 const TABS = [
   { id: 'main',       label: 'Dashboard',             icon: '📈', render: renderMain },
@@ -28,7 +29,6 @@ const TABS = [
 ];
 
 let currentTab = 'main';
-let reloadTimer = null;
 let badges = { pedidos: 0, duvidas: 0, pending: 0 };
 let currentProfile = null;
 
@@ -85,30 +85,30 @@ export function renderApp(root, profile) {
   refreshBadges();
   updateSyncPill();
 
-  // Tabs que recarregam automaticamente (só display, sem formulários).
-  // Todas as outras (registos, transfer, ajustes, pivot, consumo) não
-  // re-renderizam no timer para não apagar inputs em curso.
+  // Tabs que recarregam automaticamente quando chegam eventos realtime
+  // (só display, sem formulários). Outras tabs (malotes, psy, transfer,
+  // ajustes, pivot, consumo) não re-renderizam — event listeners
+  // dedicados já tratam do UI state em tempo real.
   const AUTO_RERENDER = new Set(['main', 'movimentos', 'inventario', 'duvidas', 'pedidos']);
 
-  if (reloadTimer) clearInterval(reloadTimer);
-  reloadTimer = setInterval(async () => {
-    if (!navigator.onLine) { updateSyncPill(); return; }
-    const pill = document.getElementById('syncPill');
-    const txt = document.getElementById('syncText');
-    if (!pill) return;
-    pill.classList.add('reloading');
-    txt.textContent = 'A sincronizar...';
-    await sync();
-    setTimeout(() => {
-      // Só re-render em tabs puramente de display
+  // Realtime: substitui o poll de 60s por push events do Supabase.
+  // Quando há INSERT/UPDATE/DELETE em movimentos ou pedidos, re-render do
+  // current tab (se for display) + refresh de badges.
+  startRealtime({
+    tables: ['movimentos', 'pedidos'],
+    onChange: () => {
       if (AUTO_RERENDER.has(currentTab)) renderCurrentTab();
       refreshBadges();
       updateSyncPill();
-    }, 500);
-  }, 60000);
+    },
+  });
 
-  // listeners de rede
-  window.addEventListener('online', updateSyncPill);
+  // Sync de offline queue (fila local → DB) ao voltar online
+  window.addEventListener('online', async () => {
+    await sync();
+    refreshBadges();
+    updateSyncPill();
+  });
   window.addEventListener('offline', updateSyncPill);
   window.addEventListener('sync-done', () => { refreshBadges(); updateSyncPill(); });
 }
