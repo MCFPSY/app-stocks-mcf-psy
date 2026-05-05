@@ -763,12 +763,49 @@ export async function renderMalotes(el, ctx) {
         ratio, gamas, matriz, linhas: linhasOrdenadas, mp, weeklyFallbackGama: fallback,
       });
 
-      // Injetar rolaria_tons + rolaria_gama em cada entry
+      // Identificar entries com tons > 0 mas sem gama atribuída → pedir manualmente
+      const needsManual = [];
       for (let i = 0; i < entriesToSubmit.length; i++) {
         const info = rolariaMap.get(i);
         if (info && info.tons > 0) {
           entriesToSubmit[i].rolaria_tons = +info.tons.toFixed(3);
-          if (info.gama) entriesToSubmit[i].rolaria_gama = info.gama;
+          if (info.gama) {
+            entriesToSubmit[i].rolaria_gama = info.gama;
+          } else {
+            needsManual.push(i);
+          }
+        }
+      }
+
+      // Se há entries sem gama, mostrar modal para o operador escolher
+      // (filtrado por comprimento do produto: 1000→2100, 1200→2500, 800→2600)
+      if (needsManual.length > 0) {
+        for (const idx of needsManual) {
+          const entry = entriesToSubmit[idx];
+          const produto = mp.find(x => x.produto_stock === entry.produto_stock);
+          const compProduto = produto?.comprimento || 0;
+          // Filtrar gamas elegíveis pela comp do produto → comp_rolaria
+          // 1000 → 2100; 1200 → 2500; 800 → 2600; charriot prods (2100/2500/2600/2750) → exact match
+          let elegiveis = gamas;
+          if ([800, 1000, 1200].includes(compProduto)) {
+            const compRol = compProduto === 1000 ? 2100 : compProduto === 1200 ? 2500 : 2600;
+            elegiveis = gamas.filter(g => g.comp_rolaria_mm === compRol);
+          } else if ([2100, 2500, 2600, 2750].includes(compProduto)) {
+            elegiveis = gamas.filter(g => g.comp_rolaria_mm === compProduto);
+          }
+          // Senão (comp atípico) → mostra todas
+          const choice = await pickGamaModal({
+            linha: entry.linha,
+            produto: entry.produto_stock,
+            tons: entry.rolaria_tons,
+            gamas: elegiveis,
+            allGamas: gamas,
+          });
+          if (choice === null) {
+            toast('Submissão cancelada — gama em falta', 'error');
+            return;
+          }
+          entry.rolaria_gama = choice;
         }
       }
     } catch (err) {
@@ -799,4 +836,57 @@ export async function renderMalotes(el, ctx) {
   });
 
   updateTotals();
+}
+
+// =========================================================
+// Modal: pedir ao operador a gama de rolaria consumida
+// (Quando algoritmo não consegue determinar — ex.: aprov sem principal
+//  no turno, ou principal com costaneiro desconhecido)
+// =========================================================
+function pickGamaModal({ linha, produto, tons, gamas, allGamas }) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    let showAll = false;
+    function render() {
+      const list = (showAll ? allGamas : gamas).slice().sort((a, b) =>
+        (a.comp_rolaria_mm - b.comp_rolaria_mm) || (a.diam_min_mm - b.diam_min_mm) || a.nome.localeCompare(b.nome)
+      );
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:560px">
+          <h3>🪵 Gama de rolaria consumida</h3>
+          <p class="sub" style="margin-bottom:14px">
+            Não consegui determinar automaticamente a gama de rolaria para este registo
+            (provavelmente porque a linha principal não foi registada neste turno).
+            Indica que rolaria foi consumida:
+          </p>
+          <div style="background:#f5f5f7;padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:.9rem">
+            <div><b>Linha:</b> ${linha}</div>
+            <div><b>Produto:</b> ${produto}</div>
+            <div><b>Tons rolaria:</b> ${Number(tons).toFixed(2)}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow-y:auto">
+            ${list.length === 0
+              ? '<p style="color:#888;text-align:center;padding:14px">Sem gamas elegíveis para este comprimento.</p>'
+              : list.map(g => `<button type="button" data-gama="${g.nome.replace(/"/g,'&quot;')}" style="padding:10px 14px;background:#fff;border:2px solid var(--color-border);border-radius:10px;cursor:pointer;text-align:left;font-size:.9rem">${g.nome} <span style="color:#888;font-size:.78rem">(${g.categoria})</span></button>`).join('')
+            }
+          </div>
+          <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <label style="font-size:.85rem;color:#666;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" id="showAll" ${showAll ? 'checked' : ''}>
+              Mostrar todas as gamas (raro)
+            </label>
+            <button class="btn btn-secondary" id="cancelBtn">Cancelar</button>
+          </div>
+        </div>
+      `;
+      overlay.querySelector('#showAll').addEventListener('change', e => { showAll = e.target.checked; render(); });
+      overlay.querySelector('#cancelBtn').addEventListener('click', () => { overlay.remove(); resolve(null); });
+      overlay.querySelectorAll('button[data-gama]').forEach(b => {
+        b.addEventListener('click', () => { overlay.remove(); resolve(b.dataset.gama); });
+      });
+    }
+    document.body.appendChild(overlay);
+    render();
+  });
 }
