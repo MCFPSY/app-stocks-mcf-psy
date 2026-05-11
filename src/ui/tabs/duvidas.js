@@ -51,14 +51,16 @@ async function render(el, ctx) {
   lista.querySelectorAll('[data-validar]').forEach(b => b.onclick = async () => {
     const id = b.dataset.validar;
     const novoProd = lista.querySelector(`[data-prod="${id}"]`).value;
-    const { error } = await supabase.from('movimentos').update({ produto_stock: novoProd, duvida_resolvida: true }).eq('id', id);
+    const { data, error } = await supabase.from('movimentos').update({ produto_stock: novoProd, duvida_resolvida: true }).eq('id', id).select();
     if (error) return toast('Erro: '+error.message,'error');
+    if (!data || data.length === 0) return toast('Sem permissão para atualizar — verifica RLS', 'error');
     toast('✓ Validado','success'); render(el, ctx);
   });
   lista.querySelectorAll('[data-rejeitar]').forEach(b => b.onclick = async () => {
     if (!confirm('Rejeitar e estornar este movimento?')) return;
-    const { error } = await supabase.from('movimentos').update({ estornado: true, duvida_resolvida: true }).eq('id', b.dataset.rejeitar);
+    const { data, error } = await supabase.from('movimentos').update({ estornado: true, duvida_resolvida: true }).eq('id', b.dataset.rejeitar).select();
     if (error) return toast('Erro: '+error.message,'error');
+    if (!data || data.length === 0) return toast('Sem permissão para atualizar — verifica RLS', 'error');
     toast('✓ Rejeitado','success'); render(el, ctx);
   });
 }
