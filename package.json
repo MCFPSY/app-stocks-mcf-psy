@@ -17,6 +17,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
     "vite": "^5.4.0",
     "vite-plugin-pwa": "^0.20.0"
   }

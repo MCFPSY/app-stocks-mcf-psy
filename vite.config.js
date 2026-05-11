@@ -9,7 +9,7 @@ export default defineConfig({
     isProd ? VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['icon.svg'],
+      includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,ico,png,woff2}'],
         skipWaiting: true,
@@ -30,11 +30,15 @@ export default defineConfig({
         description: 'Gestão de stocks MCF + PSY',
         theme_color: '#007AFF',
         background_color: '#f5f5f7',
-        display: 'fullscreen',
+        display: 'standalone',
         orientation: 'any',
-        start_url: '/',
+        scope: '/app-stocks-mcf-psy/',
+        start_url: '/app-stocks-mcf-psy/',
         icons: [
-          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
         ]
       }
     }) : null
