@@ -146,10 +146,17 @@ export async function renderMovimentos(el, ctx) {
             <th style="text-align:left;padding:10px;border-bottom:2px solid #e0e0e0">Operador</th>
           </tr></thead>
           <tbody>
-            ${data.map(m => `<tr>
+            ${data.map(m => {
+              const pendente = m.incerteza && !m.duvida_resolvida;
+              const estornado = m.estornado;
+              const rowBg = pendente ? 'background:#fff8e1' : (estornado ? 'background:#fbeaea' : '');
+              const flag = pendente
+                ? ` <span style="background:#f57f17;color:#fff;padding:1px 6px;border-radius:6px;font-size:.65rem;font-weight:700">DÚVIDA</span>`
+                : estornado ? ` <span style="background:#c0392b;color:#fff;padding:1px 6px;border-radius:6px;font-size:.65rem;font-weight:700">ESTORNADO</span>` : '';
+              return `<tr style="${rowBg}">
               <td style="padding:8px;border-bottom:1px solid #f0f0f3;white-space:nowrap">${m.data_registo || '-'}</td>
               <td style="padding:8px;border-bottom:1px solid #f0f0f3;white-space:nowrap;color:#888">${new Date(m.criado_em).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</td>
-              <td style="padding:8px;border-bottom:1px solid #f0f0f3"><span style="background:#e3f2fd;padding:2px 8px;border-radius:8px;font-size:.72rem">${m.tipo}</span></td>
+              <td style="padding:8px;border-bottom:1px solid #f0f0f3"><span style="background:#e3f2fd;padding:2px 8px;border-radius:8px;font-size:.72rem">${m.tipo}</span>${flag}</td>
               <td style="padding:8px;border-bottom:1px solid #f0f0f3">${m.empresa}${m.empresa_destino ? ' → ' + m.empresa_destino : ''}</td>
               <td style="padding:8px;border-bottom:1px solid #f0f0f3;font-size:.8rem">${m.linha || '-'}</td>
               <td style="padding:8px;border-bottom:1px solid #f0f0f3">${m.turno || '-'}</td>
@@ -160,7 +167,8 @@ export async function renderMovimentos(el, ctx) {
               <td style="padding:8px;text-align:right;border-bottom:1px solid #f0f0f3;color:${m.rolaria_tons ? '#1d1d1f' : '#ccc'}">${m.rolaria_tons ? Number(m.rolaria_tons).toFixed(2) : '—'}</td>
               <td style="padding:8px;border-bottom:1px solid #f0f0f3;font-size:.75rem;color:#666">${m.rolaria_gama || '—'}</td>
               <td style="padding:8px;border-bottom:1px solid #f0f0f3;font-size:.8rem">${m.profiles?.nome || '—'}</td>
-            </tr>`).join('')}
+            </tr>`;
+            }).join('')}
           </tbody>
           <tfoot><tr style="background:#f0f7ff;font-weight:700">
             <td colspan="7" style="padding:10px;border-top:2px solid var(--color-blue)">Total (${data.length} registos)</td>
