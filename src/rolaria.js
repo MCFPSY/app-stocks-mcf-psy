@@ -21,8 +21,9 @@ export function computeRolariaPerEntry(entries, opts) {
       if (row.comp_produto_mm !== comp) continue;
       if (larg < row.larg_min || larg > row.larg_max) continue;
       if (esp > row.esp_max) continue;
-      if (row.costaneiro_esp_min != null && row.costaneiro_esp_max != null) {
-        if (costaneiroEsp == null) continue;
+      // Filtro de costaneiro: só aplica se conhecido. Se desconhecido,
+      // ignora o filtro → primeiro row que matcha (comp, larg, esp) ganha.
+      if (costaneiroEsp != null && row.costaneiro_esp_min != null && row.costaneiro_esp_max != null) {
         if (costaneiroEsp < row.costaneiro_esp_min || costaneiroEsp > row.costaneiro_esp_max) continue;
       }
       return gamaById[row.gama_id] || null;
