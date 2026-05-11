@@ -34,14 +34,16 @@ export function computeRolariaPerEntry(entries, opts) {
     return gamas.find(g => g.comp_rolaria_mm === comp && g.categoria === categoria) || null;
   }
 
-  // Pass 0: costaneiro esp by turno (from aproveitamentos sinal='+')
+  // Pass 0: costaneiro LARGURA by turno (from aproveitamentos sinal='+')
+  // Nota: o campo `costaneiro_esp_min/max` na matriz é misnomer — os valores
+  // (70-90, 91-100) são LARGURAS do costaneiro, não espessuras.
   const aprovEspPerTurno = new Map();
   for (const e of entries) {
     const linha = linhaByNome[e.linha];
     if (!linha) continue;
     if (linha.tipo_benchmark === 'aproveitamentos' && linha.sinal === '+') {
       const p = mpMap[e.produto_stock];
-      if (p) aprovEspPerTurno.set(turnoKey(e), p.espessura);
+      if (p) aprovEspPerTurno.set(turnoKey(e), p.largura);
     }
   }
 
