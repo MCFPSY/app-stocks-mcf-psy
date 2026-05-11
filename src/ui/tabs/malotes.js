@@ -229,12 +229,16 @@ export async function renderMalotes(el, ctx) {
     const totPecas = malotes * (ls.pecas_por_malote || 0);
     const isSub = isSubLine(linha.nome);
     const nameStyle = isSub ? 'padding:4px 8px 10px 30px;font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.5px;vertical-align:top' : 'padding:10px;font-weight:600;white-space:nowrap';
-    const rowStyle = isSub ? 'background:#fef9f0' : '';
+    const hasDuvida = ls.duvida === true;
+    const rowStyle = hasDuvida ? 'background:#fff3cd' : (isSub ? 'background:#fef9f0' : '');
     const displayName = isSub ? subLineLabel(linha.nome) : linha.nome;
 
     return `
       <tr data-linha="${linha.nome}" style="${rowStyle}">
-        <td style="${nameStyle}">${displayName}</td>
+        <td style="${nameStyle}">
+          ${displayName}
+          <button type="button" class="btn-duvida" title="Marcar dúvida" style="margin-left:6px;background:none;border:1px solid ${hasDuvida ? '#c0392b' : '#ddd'};color:${hasDuvida ? '#c0392b' : '#999'};border-radius:6px;font-size:.7rem;padding:2px 6px;cursor:pointer;vertical-align:middle">❓${hasDuvida ? ' Dúvida' : ''}</button>
+        </td>
         <td style="padding:8px">
           <select class="field-prod" style="width:100%;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
             <option value="">— Escolher produto —</option>
@@ -277,18 +281,21 @@ export async function renderMalotes(el, ctx) {
       }
 
       // Product row
+      const hasDuvida = e.duvida === true;
       const nameCell = idx === 0
         ? `<td style="padding:10px;font-weight:600;white-space:nowrap;vertical-align:top">${linha.nome}</td>`
         : `<td style="padding:10px"></td>`;
       const rowBorder = idx > 0 ? 'border-top:1px dashed #ddd' : '';
+      const rowBg = hasDuvida ? 'background:#fff3cd;' : '';
       html += `
-        <tr data-minus-linha="${linha.nome}" data-eidx="${idx}" style="${rowBorder}">
+        <tr data-minus-linha="${linha.nome}" data-eidx="${idx}" style="${rowBg}${rowBorder}">
           ${nameCell}
           <td style="padding:8px">
             <select class="field-prod-m" style="width:100%;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
               <option value="">— Escolher produto —</option>
               ${produtoOptionsForMinus(e.produto_origem, e.produto_stock)}
             </select>
+            <button type="button" class="btn-duvida-m" title="Marcar dúvida" style="margin-top:4px;background:none;border:1px solid ${hasDuvida ? '#c0392b' : '#ddd'};color:${hasDuvida ? '#c0392b' : '#999'};border-radius:6px;font-size:.7rem;padding:2px 6px;cursor:pointer">❓${hasDuvida ? ' Dúvida' : ' marcar dúvida'}</button>
           </td>
           <td style="padding:8px;width:100px">
             <input type="number" class="field-pecas-m" min="0" step="1" value="${e.pecas_por_malote || ''}" placeholder="${defPecas || '-'}" style="width:100%;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-size:.95rem;text-align:center;font-weight:600">
@@ -569,6 +576,10 @@ export async function renderMalotes(el, ctx) {
     row.querySelector('.btn-inc')?.addEventListener('click', () => { ls.malotes = (Number(ls.malotes)||0)+1; malInp.value = ls.malotes; persist(); updateDerived(); });
     row.querySelector('.btn-dec')?.addEventListener('click', () => { ls.malotes = Math.max(0,(Number(ls.malotes)||0)-1); malInp.value = ls.malotes; persist(); updateDerived(); });
     malInp?.addEventListener('change', () => { ls.malotes = Math.max(0, parseFloat(malInp.value)||0); malInp.value = ls.malotes; persist(); updateDerived(); });
+    row.querySelector('.btn-duvida')?.addEventListener('click', () => {
+      ls.duvida = !ls.duvida;
+      persist(); renderMalotes(el, ctx);
+    });
   });
 
   // --- Minus rows (sinal='-'): event delegation ---
@@ -624,6 +635,9 @@ export async function renderMalotes(el, ctx) {
         const eidx = parseInt(t.dataset.eidx);
         ctx2.ls.entries.splice(eidx, 1);
         persist(); renderMalotes(el, ctx);
+      } else if (t.classList.contains('btn-duvida-m')) {
+        ctx2.entry.duvida = !ctx2.entry.duvida;
+        persist(); renderMalotes(el, ctx);
       }
       return;
     }
@@ -678,11 +692,15 @@ export async function renderMalotes(el, ctx) {
           tipo: 'entrada_producao', empresa: 'MCF',
           produto_stock: p.produto_stock, malotes: m, pecas_por_malote: np,
           m3: +(vol1*m*np).toFixed(4),
-          operador_id: ctx.profile.id, incerteza: false, duvida_resolvida: true,
+          operador_id: ctx.profile.id,
+          incerteza: !!e.duvida,
+          duvida_resolvida: !e.duvida,  // se há dúvida → fica pendente até admin validar
           data_registo: state.data_registo, linha: l.nome, turno: deriveTurno(l.nome),
         };
         if (e.produto_origem) entry.produto_origem = e.produto_origem;
         if (e.multiplicador && e.multiplicador > 0) entry.multiplicador = e.multiplicador;
+        entry._duvida_flag = !!e.duvida; // marker temporário p/ pedir obs depois
+        entry._linha_label = l.nome;
         entriesToSubmit.push(entry);
 
         // Retestagem (sinal='-' com produto_origem): gerar saida + sobra
@@ -812,8 +830,24 @@ export async function renderMalotes(el, ctx) {
       console.warn('Erro a calcular rolaria (prossegue sem):', err);
     }
 
+    // Modal para entries marcadas com dúvida — pedir descrição
+    const duvidaEntries = entriesToSubmit.filter(e => e._duvida_flag);
+    if (duvidaEntries.length > 0) {
+      const obs = await askDuvidasModal(duvidaEntries);
+      if (obs === null) { toast('Submissão cancelada', 'error'); return; }
+      // Aplicar obs em cada entry com dúvida
+      for (let i = 0; i < duvidaEntries.length; i++) {
+        const text = obs[i] || '';
+        duvidaEntries[i].justificacao = text ? `Dúvida: ${text}` : 'Dúvida (sem descrição)';
+      }
+    }
+    // Limpar markers temporários
+    for (const e of entriesToSubmit) { delete e._duvida_flag; delete e._linha_label; }
+
+    const nDuvidas = duvidaEntries.length;
     const totalToSubmit = entriesToSubmit.length + saidasRetestagem.length + sobrasReapov.length;
-    if (!confirm(`Submeter ${totalToSubmit} registo(s) (${entriesToSubmit.length} produção + ${saidasRetestagem.length} saídas retestagem + ${sobrasReapov.length} sobras) — total ${entriesToSubmit.reduce((s,e)=>s+e.m3,0).toFixed(2)} m³?`)) return;
+    const msg = `Submeter ${totalToSubmit} registo(s) — ${entriesToSubmit.length} produção${nDuvidas ? ` (${nDuvidas} c/ dúvida)` : ''}${saidasRetestagem.length ? ` + ${saidasRetestagem.length} saídas retestagem` : ''}${sobrasReapov.length ? ` + ${sobrasReapov.length} sobras` : ''} — total ${entriesToSubmit.reduce((s,e)=>s+e.m3,0).toFixed(2)} m³?`;
+    if (!confirm(msg)) return;
 
     const btn = el.querySelector('#submitBtn');
     btn.disabled = true; btn.textContent = 'A submeter...';
@@ -825,17 +859,61 @@ export async function renderMalotes(el, ctx) {
     btn.disabled = false; btn.textContent = '✓ Submeter turno';
     toast(offline > 0 ? `✓ ${online} submetidos, ${offline} em fila offline` : `✓ ${online} registos submetidos`, 'success');
 
-    // Reset malotes mas manter setup
+    // Reset malotes + duvida mas manter setup (produto)
     for (const l of linhasOrdenadas) {
       const ls = state.linhas[l.nome];
-      if (l.sinal === '-') { for (const e of (ls.entries||[])) e.malotes = 0; }
-      else ls.malotes = 0;
+      if (l.sinal === '-') {
+        for (const e of (ls.entries||[])) { e.malotes = 0; e.duvida = false; }
+      } else {
+        ls.malotes = 0; ls.duvida = false;
+      }
     }
     persist(); renderMalotes(el, ctx);
     window.dispatchEvent(new CustomEvent('sync-done'));
   });
 
   updateTotals();
+}
+
+// =========================================================
+// Modal: descrever dúvidas para cada entry marcada
+// Retorna array de obs (mesma ordem que entries), ou null se cancelar
+// =========================================================
+function askDuvidasModal(entries) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:600px;max-height:80vh;overflow-y:auto">
+        <h3>❓ Dúvidas registadas (${entries.length})</h3>
+        <p class="sub" style="margin-bottom:14px">
+          Para cada registo marcado com dúvida, descreve qual o produto que pensas
+          que era correto. Estes registos ficam pendentes na tab <b>Dúvidas</b>
+          até um admin validar — e só depois afetam o inventário.
+        </p>
+        ${entries.map((e, i) => `
+          <div style="background:#fff8e1;padding:12px;border-radius:10px;margin-bottom:10px">
+            <div style="font-size:.85rem;color:#666;margin-bottom:6px">
+              <b>${e._linha_label}</b> · ${e.malotes} malotes · escolhido: <b>${e.produto_stock}</b>
+            </div>
+            <input type="text" data-obs-idx="${i}" placeholder="O que pensavas que era? (ex.: 1200x95x18 em vez de 1200x98x18)"
+              style="width:100%;padding:8px 10px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
+          </div>
+        `).join('')}
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-secondary" id="cancelBtn">Cancelar</button>
+          <button class="btn btn-success" id="okBtn">✓ Submeter c/ dúvidas</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#cancelBtn').onclick = () => { overlay.remove(); resolve(null); };
+    overlay.querySelector('#okBtn').onclick = () => {
+      const obs = entries.map((_, i) => overlay.querySelector(`[data-obs-idx="${i}"]`).value.trim());
+      overlay.remove();
+      resolve(obs);
+    };
+  });
 }
 
 // =========================================================
