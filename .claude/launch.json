@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev", "--", "--host"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "puzzlemargin-dev",
+      "runtimeExecutable": ".claude\\start-puzzle-dev.bat",
+      "runtimeArgs": [],
+      "port": 4321
     }
   ]
 }

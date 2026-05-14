@@ -63,7 +63,12 @@
       "Bash(python tmp_docx/read_docx.py)",
       "Bash(python -c ':*)",
       "Bash(python \"C:/Users/Goncalo.Barata/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/49b0ac05-2c95-4ce8-ab54-76dc73e8d5f4/a7db8db0-9080-430a-86bf-d0d83b665f99/skills/docx/scripts/office/soffice.py\" --headless --convert-to png image2.emf)",
-      "Bash(\"C:/Program Files/LibreOffice/program/soffice.exe\" --headless --convert-to png \"C:/Users/Goncalo.Barata/Desktop/App stocks/.claude/worktrees/inspiring-taussig/tmp_docx/image2.emf\" --outdir \"C:/Users/Goncalo.Barata/Desktop/App stocks/.claude/worktrees/inspiring-taussig/tmp_docx/\")"
+      "Bash(\"C:/Program Files/LibreOffice/program/soffice.exe\" --headless --convert-to png \"C:/Users/Goncalo.Barata/Desktop/App stocks/.claude/worktrees/inspiring-taussig/tmp_docx/image2.emf\" --outdir \"C:/Users/Goncalo.Barata/Desktop/App stocks/.claude/worktrees/inspiring-taussig/tmp_docx/\")",
+      "Bash(curl -fsSL -o \"C:/Users/Goncalo.Barata/Desktop/Website puzzle/public/uploads/clients/manuel-de-castro.png\" \"https://le-de.cdn-website.com/3a62c114099b45609d7628aaa23a1f1d/dms3rep/multi/opt/Screenshot+2023-10-17+at+16.06.07-240w.png\")",
+      "Bash(curl -fsSL -o \"C:/Users/Goncalo.Barata/Desktop/Website puzzle/public/uploads/clients/palsystems.gif\" \"https://de.cdn-website.com/79e6659082ea44c9bd190d0acd6e519a/dms3rep/multi/938-2.gif\")",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(curl -sf http://127.0.0.1:4321/casos/manuel-de-castro-filhos -o /dev/null)",
+      "Bash(curl -s \"http://127.0.0.1:4321/casos/manuel-de-castro-filhos\")"
     ]
   }
 }
