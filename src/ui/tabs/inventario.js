@@ -9,6 +9,7 @@ export async function renderInventario(el, ctx) {
       <div style="display:flex;gap:6px;background:#f5f5f7;padding:6px;border-radius:14px;margin-bottom:20px">
         <button class="tab-btn inv-mode active" data-mode="madeira" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer">🪵 Madeira serrada</button>
         <button class="tab-btn inv-mode" data-mode="paletes" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;background:transparent;color:var(--color-text-2)">📦 Paletes</button>
+        <button class="tab-btn inv-mode" data-mode="rolaria" style="flex:1;padding:12px;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;background:transparent;color:var(--color-text-2)">🪵 Rolaria</button>
       </div>
       <div id="invContent"><p class="sub">A carregar...</p></div>
     </div>
@@ -30,7 +31,8 @@ export async function renderInventario(el, ctx) {
   async function loadContent() {
     content.innerHTML = '<p class="sub">A carregar...</p>';
     if (currentMode === 'madeira') await renderMadeira(content);
-    else await renderPaletes(content);
+    else if (currentMode === 'paletes') await renderPaletes(content);
+    else await renderRolaria(content);
   }
 
   loadContent();
@@ -52,7 +54,9 @@ async function renderMadeira(el) {
 
   const map = new Map();
   for (const r of data) {
-    if (!map.has(r.produto_stock)) map.set(r.produto_stock, { produto: r.produto_stock, MCF: 0, PSY: 0, m3: 0, categoria: catMap.get(r.produto_stock) || 'outros' });
+    const cat = catMap.get(r.produto_stock) || 'outros';
+    if (cat === 'rolaria') continue; // rolaria tem o seu próprio modo
+    if (!map.has(r.produto_stock)) map.set(r.produto_stock, { produto: r.produto_stock, MCF: 0, PSY: 0, m3: 0, categoria: cat });
     const o = map.get(r.produto_stock);
     o[r.empresa] = Number(r.malotes || 0);
     o.m3 += Number(r.m3 || 0);
@@ -160,6 +164,60 @@ async function renderMadeira(el) {
   filterEmpresa.addEventListener('change', renderTable);
   filterCategoria.addEventListener('change', renderTable);
   renderTable();
+}
+
+// ====== ROLARIA (MCF, em toneladas) ======
+async function renderRolaria(el) {
+  const [stockRes, gamasRes] = await Promise.all([
+    supabase.from('v_stock').select('produto_stock, malotes').eq('empresa', 'MCF'),
+    supabase.from('rolaria_gamas').select('nome, comp_rolaria_mm, diam_min_mm, diam_max_mm').eq('ativo', true),
+  ]);
+  if (stockRes.error) { el.innerHTML = `<p class="sub">Erro: ${stockRes.error.message}</p>`; return; }
+  const stockMap = new Map();
+  for (const r of (stockRes.data || [])) {
+    if (!r.produto_stock || !r.produto_stock.startsWith('Rolaria ')) continue;
+    stockMap.set(r.produto_stock, Number(r.malotes || 0));
+  }
+  const gamas = (gamasRes.data || []).map(g => ({
+    produto: 'Rolaria ' + g.nome,
+    comp: g.comp_rolaria_mm,
+    diamMin: g.diam_min_mm,
+    diamMax: g.diam_max_mm,
+    tons: stockMap.get('Rolaria ' + g.nome) || 0,
+  })).sort((a, b) => a.comp - b.comp || a.diamMin - b.diamMin);
+
+  const totalTons = gamas.reduce((s, r) => s + r.tons, 0);
+  const negCount = gamas.filter(r => r.tons < 0).length;
+
+  el.innerHTML = `
+    <p class="sub">Stock de rolaria em MCF (toneladas). Consumos vêm dos registos de produção via algoritmo gama. Entradas (compras) virão do Primavera — por agora o stock fica negativo.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px">
+      <div class="card" style="margin:0"><div class="sub">Gamas</div><div style="font-size:1.85rem;font-weight:700">${gamas.length}</div></div>
+      <div class="card" style="margin:0"><div class="sub">Total (ton)</div><div style="font-size:1.85rem;font-weight:700;color:${totalTons < 0 ? '#c0392b' : 'inherit'}">${totalTons.toFixed(2)}</div></div>
+      <div class="card" style="margin:0"><div class="sub">Gamas negativas</div><div style="font-size:1.85rem;font-weight:700;color:${negCount > 0 ? '#c0392b' : 'inherit'}">${negCount}</div></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="text-align:left;padding:12px;border-bottom:2px solid #e0e0e0">Comp (mm)</th>
+        <th style="text-align:left;padding:12px;border-bottom:2px solid #e0e0e0">Diâmetro (mm)</th>
+        <th style="text-align:left;padding:12px;border-bottom:2px solid #e0e0e0">Gama</th>
+        <th style="text-align:right;padding:12px;border-bottom:2px solid #e0e0e0">Stock (ton)</th>
+      </tr></thead>
+      <tbody>
+        ${gamas.length === 0 ? '<tr><td colspan="4" style="padding:20px;text-align:center;color:#888">Sem gamas configuradas</td></tr>'
+          : gamas.map(r => `<tr>
+            <td style="padding:12px;border-bottom:1px solid #f0f0f3">${r.comp}</td>
+            <td style="padding:12px;border-bottom:1px solid #f0f0f3">${r.diamMin}–${r.diamMax >= 9999 ? '∞' : r.diamMax}</td>
+            <td style="padding:12px;border-bottom:1px solid #f0f0f3;font-size:.85rem;color:#666">${r.produto}</td>
+            <td style="padding:12px;text-align:right;border-bottom:1px solid #f0f0f3;font-weight:600;color:${r.tons < 0 ? '#c0392b' : 'inherit'}">${r.tons.toFixed(2)}</td>
+          </tr>`).join('')}
+      </tbody>
+      ${gamas.length ? `<tfoot><tr style="background:#f0f7ff;font-weight:700">
+        <td colspan="3" style="padding:12px;border-top:2px solid var(--color-blue)">Total</td>
+        <td style="padding:12px;text-align:right;border-top:2px solid var(--color-blue);color:${totalTons < 0 ? '#c0392b' : 'inherit'}">${totalTons.toFixed(2)} ton</td>
+      </tr></tfoot>` : ''}
+    </table>
+  `;
 }
 
 // ====== PALETES (PSY stock via v_stock — inclui produção + transferências) ======
