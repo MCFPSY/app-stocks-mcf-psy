@@ -21,7 +21,8 @@ async function getStockMCF(produto_stock) {
 export async function renderTransfer(el, ctx) {
   el.innerHTML = `<div class="card"><h2>🔄 Transferência MCF → PSY</h2><p class="sub">A carregar...</p></div>`;
   const mp = await loadMP();
-  const cats = [...new Set(mp.map(x => x.categoria))];
+  const ALLOWED = ['barrotes', 'tabuas'];
+  const cats = [...new Set(mp.map(x => x.categoria))].filter(c => ALLOWED.includes(c));
   const defaultCat = cats.includes('tabuas') ? 'tabuas' : cats[0];
 
   el.innerHTML = `

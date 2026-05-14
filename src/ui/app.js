@@ -5,7 +5,6 @@ import { renderInventario } from './tabs/inventario.js';
 import { renderMovimentos } from './tabs/movimentos.js';
 import { renderPedidos, countPedidosPendentes } from './tabs/pedidos.js';
 import { renderDuvidas, countDuvidas } from './tabs/duvidas.js';
-import { renderAjustes } from './tabs/ajustes.js';
 import { renderPSY } from './tabs/psy.js';
 import { renderMain } from './tabs/main.js';
 import { renderConsumo } from './tabs/consumo.js';
@@ -25,7 +24,6 @@ const TABS = [
   { id: 'duvidas',    label: 'Dúvidas',           icon: '❓', render: renderDuvidas },
   { id: 'consumo',    label: 'Consumo Rolaria',   icon: '🪵', render: renderConsumo },
   { id: 'pivot',      label: 'Análise',           icon: '📊', render: renderPivot },
-  { id: 'ajustes',    label: 'Ajustes',           icon: '⚙️', render: renderAjustes },
 ];
 
 let currentTab = 'main';
@@ -211,7 +209,7 @@ async function openSettingsModal() {
     operador:       { tabs: ['malotes','psy','transfer','inventario','pedidos'], write: ['movimentos','pedidos','psy_producao'] },
     contabilista:   { tabs: ['main','inventario','movimentos','pedidos'], write: ['contabilizacao','pedidos'] },
     admin_producao: { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas'], write: ['movimentos','pedidos','duvidas','psy_producao'] },
-    admin:          { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas','ajustes'], write: ['*'] },
+    admin:          { tabs: ['main','malotes','psy','transfer','inventario','movimentos','pedidos','duvidas'], write: ['*'] },
   };
 
   content.innerHTML = users.map(u => {

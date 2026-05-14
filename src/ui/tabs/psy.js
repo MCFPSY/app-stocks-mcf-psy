@@ -112,8 +112,8 @@ export async function renderPSY(el, ctx) {
               <button type="button" class="btn-inc" style="width:44px;height:44px;border:2px solid var(--color-blue);background:var(--color-blue);color:#fff;border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">+</button>
             </div>
           </td>
-          <td style="padding:8px;text-align:center;font-size:.8rem;color:${pctColor};min-width:90px">
-            ${target ? `🎯 ${target}${qty > 0 ? ` · <b>${Math.round(qty / target * 100)}%</b>` : ''}` : '<span style="color:#ccc">—</span>'}
+          <td style="padding:8px;text-align:center;color:${pctColor};min-width:120px">
+            ${target ? `<div style="font-size:1.05rem;font-weight:600">🎯 ${target}</div>${qty > 0 ? `<div style="font-size:1.4rem;font-weight:800;line-height:1.1;margin-top:2px">${Math.round(qty / target * 100)}%</div>` : ''}` : '<span style="color:#ccc">—</span>'}
           </td>
           <td style="padding:8px;text-align:center;width:40px">
             ${entries.length > 1 ? `<button type="button" class="btn-remove-entry" title="Remover" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:1.1rem;padding:4px 8px">&times;</button>` : ''}
@@ -235,7 +235,7 @@ export async function renderPSY(el, ctx) {
     const qty = Number(e.quantidade) || 0;
     const color = target && qty > 0 ? (qty / target >= 1 ? '#1f7a3a' : qty / target >= 0.7 ? '#ad8b00' : '#c0392b') : '#888';
     targetCell.style.color = color;
-    targetCell.innerHTML = target ? `🎯 ${target}${qty > 0 ? ` · <b>${Math.round(qty / target * 100)}%</b>` : ''}` : '<span style="color:#ccc">—</span>';
+    targetCell.innerHTML = target ? `<div style="font-size:1.05rem;font-weight:600">🎯 ${target}</div>${qty > 0 ? `<div style="font-size:1.4rem;font-weight:800;line-height:1.1;margin-top:2px">${Math.round(qty / target * 100)}%</div>` : ''}` : '<span style="color:#ccc">—</span>';
   }
 
   body.addEventListener('input', (ev) => {
