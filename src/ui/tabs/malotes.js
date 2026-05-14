@@ -344,13 +344,11 @@ export async function renderMalotes(el, ctx) {
               <button type="button" class="btn-dec-m" style="width:44px;height:44px;border:2px solid var(--color-blue);background:#fff;color:var(--color-blue);border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">−</button>
               <input type="number" class="field-mal-m" min="0" step="0.5" value="${malotes}" style="width:80px;padding:10px;border:2px solid var(--color-border);border-radius:10px;text-align:center;font-size:1.2rem;font-weight:700">
               <button type="button" class="btn-inc-m" style="width:44px;height:44px;border:2px solid var(--color-blue);background:var(--color-blue);color:#fff;border-radius:10px;font-size:1.4rem;font-weight:700;cursor:pointer;touch-action:manipulation">+</button>
+              ${entries.length > 1 ? `<button type="button" class="btn-remove-entry" data-eidx="${idx}" style="margin-left:2px;background:none;border:none;color:#c0392b;cursor:pointer;font-size:1.1rem;font-weight:700" title="Remover entrada">&times;</button>` : ''}
             </div>
           </td>
           <td style="padding:8px;text-align:center;font-weight:600;color:#1d1d1f">${totPecas || '-'}</td>
-          <td style="padding:8px;text-align:center;font-weight:600;color:#495057">
-            ${m3v ? m3v.toFixed(3) + ' m³' : '-'}
-            ${entries.length > 1 ? `<button type="button" class="btn-remove-entry" data-eidx="${idx}" style="margin-left:4px;background:none;border:none;color:#c0392b;cursor:pointer;font-size:.9rem" title="Remover">&times;</button>` : ''}
-          </td>
+          <td style="padding:8px;text-align:center;font-weight:600;color:#495057">${m3v ? m3v.toFixed(3) + ' m³' : '-'}</td>
         </tr>`;
 
       // Origem sub-row
@@ -437,6 +435,39 @@ export async function renderMalotes(el, ctx) {
       /* Linha fina discreta entre blocos dentro do mesmo grupo */
       #grelha tbody tr[data-linha] > td { border-top:1px solid #f0f0f0 }
       #grelha tbody tr[data-minus-linha][data-eidx="0"] > td { border-top:1px solid #f0f0f0 }
+
+      /* === Responsivo: tablet portrait / mobile ===
+         Esconde colunas "Total peças" e "m³" (totais aparecem no rodapé),
+         encolhe steppers e padding para a grelha caber sem scroll horizontal. */
+      @media (max-width: 900px) {
+        #grelha { min-width: 0 !important; font-size: .82rem !important; }
+        /* Esconde cols 5 e 6 (Total peças, m³) no thead e tbody */
+        #grelha thead th:nth-child(5),
+        #grelha thead th:nth-child(6),
+        #grelha tbody td:nth-child(5),
+        #grelha tbody td:nth-child(6) { display: none !important; }
+        /* tfoot: 1ª td é colspan=3 ("Total do turno"), 2ª=totMalotes, 3ª=totPecas, 4ª=totM3 */
+        #grelha tfoot td:nth-child(3),
+        #grelha tfoot td:nth-child(4) { display: none !important; }
+        /* Steppers mais pequenos */
+        #grelha .btn-inc, #grelha .btn-dec,
+        #grelha .btn-inc-m, #grelha .btn-dec-m {
+          width: 36px !important; height: 36px !important; font-size: 1.1rem !important;
+        }
+        #grelha .field-mal, #grelha .field-mal-m {
+          width: 56px !important; font-size: 1rem !important; padding: 6px !important;
+        }
+        /* Selects e inputs mais pequenos */
+        #grelha .field-prod, #grelha .field-prod-m,
+        #grelha .field-pecas, #grelha .field-pecas-m,
+        #grelha .field-origem-m, #grelha .field-mult-m {
+          font-size: .82rem !important; padding: 6px !important;
+        }
+        /* Padding reduzido em todas as células */
+        #grelha th, #grelha td { padding: 6px 4px !important; }
+        /* Nome da linha quebra em múltiplas linhas se necessário */
+        #grelha tbody td:first-child { white-space: normal !important; line-height: 1.15 !important; }
+      }
     </style>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
