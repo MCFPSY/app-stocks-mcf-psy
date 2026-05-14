@@ -16,6 +16,7 @@ let mpCache = null;
 let linhasCache = null;
 let alturasCache = null;
 let compatCache = null;
+let linhaProdutosCache = null;
 
 async function loadMP() {
   if (mpCache) return mpCache;
@@ -55,6 +56,34 @@ async function loadAlturasMenores() {
   const cached = await cacheGet('v_altura_menor');
   alturasCache = cached || {};
   return alturasCache;
+}
+
+async function loadLinhaProdutos() {
+  if (linhaProdutosCache) return linhaProdutosCache;
+  if (navigator.onLine) {
+    const { data } = await supabase.from('linha_produtos').select('linha_nome, produto_stock').eq('ativo', true);
+    if (data) {
+      const map = {};
+      for (const r of data) {
+        if (!map[r.linha_nome]) map[r.linha_nome] = new Set();
+        map[r.linha_nome].add(r.produto_stock);
+      }
+      linhaProdutosCache = map;
+      const ser = {};
+      for (const [k, v] of Object.entries(map)) ser[k] = [...v];
+      await cachePut('linha_produtos', ser);
+      return map;
+    }
+  }
+  const cached = await cacheGet('linha_produtos');
+  if (cached) {
+    const map = {};
+    for (const [k, v] of Object.entries(cached)) map[k] = new Set(v);
+    linhaProdutosCache = map;
+  } else {
+    linhaProdutosCache = {};
+  }
+  return linhaProdutosCache;
 }
 
 async function loadCompat() {
@@ -106,7 +135,7 @@ function emptyEntry() { return { produto_stock: '', pecas_por_malote: 0, malotes
 // =========================================================
 export async function renderMalotes(el, ctx) {
   el.innerHTML = `<div class="card"><h2>📦 Registos Produção MCF</h2><p class="sub">A carregar...</p></div>`;
-  const [mp, linhas, alturasMenores, compatMap] = await Promise.all([loadMP(), loadLinhasMCF(), loadAlturasMenores(), loadCompat()]);
+  const [mp, linhas, alturasMenores, compatMap, allowMap] = await Promise.all([loadMP(), loadLinhasMCF(), loadAlturasMenores(), loadCompat(), loadLinhaProdutos()]);
   const linhasOrdenadas = linhas;
 
   const userId = ctx.profile.id;
@@ -148,6 +177,11 @@ export async function renderMalotes(el, ctx) {
   function findMp(sku) { return mp.find(p => p.produto_stock === sku); }
 
   function produtosDaLinha(linha) {
+    // 1ª prioridade: allow-list explícita (linha_produtos) — só mostra produtos
+    // historicamente feitos nesta linha.
+    const allow = allowMap[linha.nome];
+    if (allow && allow.size > 0) return mp.filter(p => allow.has(p.produto_stock));
+    // Fallback: filtro por categoria (compat com linhas sem allow-list)
     if (linha.sinal === '-') return mp.filter(p => p.categoria === 'tabuas' || p.categoria === 'tabuas_charriot');
     if (!linha.categoria) return mp;
     return mp.filter(p => p.categoria === linha.categoria);
@@ -201,9 +235,14 @@ export async function renderMalotes(el, ctx) {
     }).map(p => `<option value="${p.produto_stock}" ${p.produto_stock === selected ? 'selected' : ''}>${p.produto_stock}</option>`).join('');
   }
 
-  function produtoOptionsForMinus(origemStock, selected) {
+  function produtoOptionsForMinus(origemStock, selected, linhaNome) {
     const pSrc = findMp(origemStock);
-    return minusPool.filter(p => {
+    const allow = linhaNome ? allowMap[linhaNome] : null;
+    // Pool de partida: allow-list da linha (se existir), senão o pool genérico
+    const pool = (allow && allow.size > 0)
+      ? mp.filter(p => allow.has(p.produto_stock))
+      : minusPool;
+    return pool.filter(p => {
       if (pSrc && p.comprimento >= pSrc.comprimento) return false;
       if (!pSrc) return true;
       const srcKey = `${pSrc.largura}x${pSrc.espessura}`;
@@ -293,7 +332,7 @@ export async function renderMalotes(el, ctx) {
           <td style="padding:8px">
             <select class="field-prod-m" style="width:100%;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-size:.9rem">
               <option value="">— Escolher produto —</option>
-              ${produtoOptionsForMinus(e.produto_origem, e.produto_stock)}
+              ${produtoOptionsForMinus(e.produto_origem, e.produto_stock, linha.nome)}
             </select>
             <button type="button" class="btn-duvida-m" title="Marcar dúvida" style="margin-top:4px;background:none;border:1px solid ${hasDuvida ? '#c0392b' : '#ddd'};color:${hasDuvida ? '#c0392b' : '#999'};border-radius:6px;font-size:.7rem;padding:2px 6px;cursor:pointer">❓${hasDuvida ? ' Dúvida' : ' marcar dúvida'}</button>
           </td>
