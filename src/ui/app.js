@@ -32,9 +32,16 @@ let currentProfile = null;
 
 export function renderApp(root, profile) {
   currentProfile = profile;
-  // tab inicial: primeira permitida
+  // Tab inicial:
+  // - Toni → sempre "malotes" (operador chão de fábrica MCF)
+  // - Outros → mantém o que estava em currentTab; se inválido, primeira permitida
   const allowed = TABS.filter(t => canViewTab(profile, t.id));
-  if (!allowed.find(t => t.id === currentTab)) currentTab = allowed[0]?.id || 'malotes';
+  const nomeNorm = (profile.nome || '').trim().toLowerCase();
+  if (nomeNorm === 'toni' && allowed.find(t => t.id === 'malotes')) {
+    currentTab = 'malotes';
+  } else if (!allowed.find(t => t.id === currentTab)) {
+    currentTab = allowed[0]?.id || 'malotes';
+  }
 
   root.innerHTML = `
     <header class="app-header">
