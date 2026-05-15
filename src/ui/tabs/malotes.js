@@ -437,36 +437,59 @@ export async function renderMalotes(el, ctx) {
       #grelha tbody tr[data-minus-linha][data-eidx="0"] > td { border-top:1px solid #f0f0f0 }
 
       /* === Responsivo: tablet portrait / mobile ===
-         Esconde colunas "Total peças" e "m³" (totais aparecem no rodapé),
-         encolhe steppers e padding para a grelha caber sem scroll horizontal. */
+         Mantém TODAS as colunas visíveis, encolhe tudo para caber sem
+         scroll horizontal. Em landscape/desktop volta ao tamanho normal. */
       @media (max-width: 900px) {
-        #grelha { min-width: 0 !important; font-size: .82rem !important; }
-        /* Esconde cols 5 e 6 (Total peças, m³) no thead e tbody */
-        #grelha thead th:nth-child(5),
-        #grelha thead th:nth-child(6),
-        #grelha tbody td:nth-child(5),
-        #grelha tbody td:nth-child(6) { display: none !important; }
-        /* tfoot: 1ª td é colspan=3 ("Total do turno"), 2ª=totMalotes, 3ª=totPecas, 4ª=totM3 */
-        #grelha tfoot td:nth-child(3),
-        #grelha tfoot td:nth-child(4) { display: none !important; }
-        /* Steppers mais pequenos */
-        #grelha .btn-inc, #grelha .btn-dec,
-        #grelha .btn-inc-m, #grelha .btn-dec-m {
-          width: 36px !important; height: 36px !important; font-size: 1.1rem !important;
-        }
-        #grelha .field-mal, #grelha .field-mal-m {
-          width: 56px !important; font-size: 1rem !important; padding: 6px !important;
-        }
-        /* Selects e inputs mais pequenos */
+        #grelha { min-width: 0 !important; font-size: .75rem !important; table-layout: fixed; width: 100%; }
+        /* Headers: padding mínimo + fonte pequena */
+        #grelha th { padding: 6px 2px !important; font-size: .68rem !important; }
+        #grelha td { padding: 4px 2px !important; }
+        /* Larguras forçadas das colunas (% do total disponível) */
+        #grelha thead th:nth-child(1) { width: 14%; }
+        #grelha thead th:nth-child(2) { width: 30%; }
+        #grelha thead th:nth-child(3) { width: 9%; }
+        #grelha thead th:nth-child(4) { width: 27%; }
+        #grelha thead th:nth-child(5) { width: 8%; }
+        #grelha thead th:nth-child(6) { width: 12%; }
+        /* Nome linha: quebra em múltiplas linhas, fonte menor */
+        #grelha tbody td:first-child { white-space: normal !important; line-height: 1.15 !important; font-size: .72rem !important; word-break: break-word; }
+        /* Selects e inputs: tudo encolhido */
         #grelha .field-prod, #grelha .field-prod-m,
         #grelha .field-pecas, #grelha .field-pecas-m,
         #grelha .field-origem-m, #grelha .field-mult-m {
-          font-size: .82rem !important; padding: 6px !important;
+          font-size: .75rem !important; padding: 5px 4px !important; width: 100% !important;
+          box-sizing: border-box; min-width: 0;
         }
-        /* Padding reduzido em todas as células */
-        #grelha th, #grelha td { padding: 6px 4px !important; }
-        /* Nome da linha quebra em múltiplas linhas se necessário */
-        #grelha tbody td:first-child { white-space: normal !important; line-height: 1.15 !important; }
+        /* Stepper compacto: botões 28×28, input 38px */
+        #grelha .btn-inc, #grelha .btn-dec,
+        #grelha .btn-inc-m, #grelha .btn-dec-m {
+          width: 28px !important; height: 28px !important; font-size: 1rem !important;
+          border-width: 1px !important; border-radius: 6px !important;
+        }
+        #grelha .field-mal, #grelha .field-mal-m {
+          width: 38px !important; font-size: .85rem !important; padding: 4px 2px !important;
+          border-width: 1px !important; border-radius: 6px !important;
+        }
+        /* Reduz gap dentro da célula do stepper */
+        #grelha td > div[style*="display:flex"] { gap: 2px !important; }
+        /* Botão remover (×) mais pequeno */
+        #grelha .btn-remove-entry { font-size: .9rem !important; padding: 0 2px !important; }
+        /* Total peças e m³: fonte menor, sem truncar */
+        #grelha tbody td:nth-child(5),
+        #grelha tbody td:nth-child(6) { font-size: .72rem !important; }
+        /* Dúvida button mais compacto */
+        #grelha .btn-duvida, #grelha .btn-duvida-m {
+          font-size: .6rem !important; padding: 1px 4px !important; margin-left: 2px !important;
+        }
+      }
+      /* Mobile mais apertado (smartphone portrait, ≤ 480px) */
+      @media (max-width: 480px) {
+        #grelha { font-size: .68rem !important; }
+        #grelha .btn-inc, #grelha .btn-dec,
+        #grelha .btn-inc-m, #grelha .btn-dec-m {
+          width: 24px !important; height: 24px !important;
+        }
+        #grelha .field-mal, #grelha .field-mal-m { width: 32px !important; }
       }
     </style>
     <div class="card">
