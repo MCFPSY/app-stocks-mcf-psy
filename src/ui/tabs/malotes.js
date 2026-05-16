@@ -151,6 +151,41 @@ export async function renderMalotes(el, ctx) {
     saveState(userId, state);
   }
 
+  // Pré-fill a partir de movimentos do dia (turnos anteriores ou outro operador):
+  // para cada linha vazia das famílias principal/aproveitamentos/charriot, busca
+  // o último produto registado hoje nessa linha. Linhas PSY/Sobras NÃO são pré-preenchidas.
+  if (navigator.onLine) {
+    try {
+      const { data: todayMovs } = await supabase.from('movimentos')
+        .select('linha, produto_stock, pecas_por_malote, criado_em')
+        .eq('tipo', 'entrada_producao').eq('empresa', 'MCF')
+        .eq('estornado', false).eq('data_registo', state.data_registo)
+        .not('linha', 'is', null)
+        .order('criado_em', { ascending: false });
+      if (todayMovs?.length) {
+        const lastByLinha = {};
+        for (const m of todayMovs) {
+          if (!lastByLinha[m.linha]) lastByLinha[m.linha] = m;
+        }
+        let prefilled = false;
+        for (const l of linhasOrdenadas) {
+          if (l.sinal === '-') continue; // PSY/Sobras: não pré-preencher
+          const ls = state.linhas[l.nome];
+          if (ls.produto_stock) continue; // já tem escolha do operador
+          const last = lastByLinha[l.nome];
+          if (last) {
+            ls.produto_stock = last.produto_stock;
+            ls.pecas_por_malote = last.pecas_por_malote || 0;
+            prefilled = true;
+          }
+        }
+        if (prefilled) saveState(userId, state);
+      }
+    } catch (err) {
+      console.warn('Pré-fill dos movimentos do dia falhou:', err);
+    }
+  }
+
   // Helper: deriva turno do nome da linha (T1/T2/T3 inerente) ou null
   function deriveTurno(nome) {
     const m = nome?.match(/\b(T[123])\b/);
@@ -623,43 +658,46 @@ export async function renderMalotes(el, ctx) {
       if (p) pecasInp.placeholder = p.pecas_por_malote;
       persist(); updateDerived();
 
-      // Auto-sync: principal T1/T3 → madeira 2ª T1/T3
+      // Helper: aplica produto + peças a uma linha-alvo e sincroniza a UI.
+      // forceOverwrite=false → só preenche se a linha estiver vazia.
+      function syncToTarget(targetName, forceOverwrite) {
+        const tls = state.linhas[targetName];
+        if (!tls) return;
+        if (!forceOverwrite && tls.produto_stock) return; // não sobrescreve escolha do operador
+        tls.produto_stock = ls.produto_stock;
+        if (p) tls.pecas_por_malote = p.pecas_por_malote;
+        persist();
+        const tRow = body.querySelector(`tr[data-linha="${CSS.escape(targetName)}"]`);
+        if (tRow) {
+          const ts = tRow.querySelector('.field-prod'); if (ts) ts.value = ls.produto_stock;
+          const tp2 = tRow.querySelector('.field-pecas'); if (tp2 && p) { tp2.value = p.pecas_por_malote; tp2.placeholder = p.pecas_por_malote; }
+          const totEl = tRow.querySelector('.cell-totpecas');
+          if (totEl) totEl.textContent = ((tls.malotes||0)*(tls.pecas_por_malote||0)) || '-';
+          const m3El = tRow.querySelector('.cell-m3');
+          if (m3El) { const v = calcM3Entry(tls); m3El.textContent = v ? v.toFixed(3)+' m³' : '-'; }
+        }
+        updateTotals();
+      }
+
+      // Auto-sync: principal T1/T3 → madeira 2ª T1/T3 (sempre força, é sub-linha vinculada)
       const m = nome.match(/^Linha principal (T\d)$/);
       if (m) {
-        const target = `[+] Madeira de 2ª ${m[1]}`;
-        const tls = state.linhas[target];
-        if (tls) {
-          tls.produto_stock = ls.produto_stock;
-          if (p) tls.pecas_por_malote = p.pecas_por_malote;
-          persist();
-          const tRow = body.querySelector(`tr[data-linha="${CSS.escape(target)}"]`);
-          if (tRow) {
-            const ts = tRow.querySelector('.field-prod'); if (ts) ts.value = ls.produto_stock;
-            const tp2 = tRow.querySelector('.field-pecas'); if (tp2 && p) { tp2.value = p.pecas_por_malote; tp2.placeholder = p.pecas_por_malote; }
-            const totEl = tRow.querySelector('.cell-totpecas');
-            if (totEl) totEl.textContent = ((tls.malotes||0)*(tls.pecas_por_malote||0)) || '-';
-            const m3El = tRow.querySelector('.cell-m3');
-            if (m3El) { const v = calcM3Entry(tls); m3El.textContent = v ? v.toFixed(3)+' m³' : '-'; }
-          }
-          updateTotals();
+        syncToTarget(`[+] Madeira de 2ª ${m[1]}`, true);
+        // Adicional: T1 → sugere para T3 (principal + madeira 2ª), só se T3 estiver vazia
+        if (m[1] === 'T1') {
+          syncToTarget('Linha principal T3', false);
+          syncToTarget('[+] Madeira de 2ª T3', false);
         }
       }
 
       // Auto-sync: aproveitamentos T1/T3 (opcional (B)) → madeira 2ª aprov T1/T3
       const ma = nome.match(/^Linha aproveitamentos (T\d)( \(B\))?$/);
       if (ma) {
-        const target = `[+] Madeira de 2ª Aprov ${ma[1]}${ma[2] || ''}`;
-        const tls = state.linhas[target];
-        if (tls) {
-          tls.produto_stock = ls.produto_stock;
-          if (p) tls.pecas_por_malote = p.pecas_por_malote;
-          persist();
-          const tRow = body.querySelector(`tr[data-linha="${CSS.escape(target)}"]`);
-          if (tRow) {
-            const ts = tRow.querySelector('.field-prod'); if (ts) ts.value = ls.produto_stock;
-            const tp2 = tRow.querySelector('.field-pecas'); if (tp2 && p) { tp2.value = p.pecas_por_malote; tp2.placeholder = p.pecas_por_malote; }
-          }
-          updateTotals();
+        syncToTarget(`[+] Madeira de 2ª Aprov ${ma[1]}${ma[2] || ''}`, true);
+        // Adicional: T1 → sugere para T3 (aproveitamentos + madeira 2ª aprov), só se T3 vazia
+        if (ma[1] === 'T1' && !ma[2]) {
+          syncToTarget('Linha aproveitamentos T3', false);
+          syncToTarget('[+] Madeira de 2ª Aprov T3', false);
         }
       }
     });
@@ -836,6 +874,34 @@ export async function renderMalotes(el, ctx) {
             }
           }
         }
+      }
+    }
+
+    // Meios malotes (peças soltas que não chegam a um malote completo)
+    if (confirm('Há meios malotes a registar?\n\n(Peças soltas que não chegam a um malote completo)')) {
+      const meios = await askMeiosMalotesModal({ linhas: linhasOrdenadas, mp, state, allowMap });
+      for (const mm of (meios || [])) {
+        const l = linhaByNome[mm.linha];
+        const p = findMp(mm.produto_stock);
+        if (!l || !p) continue;
+        const ppm = p.pecas_por_malote || 0;
+        if (!ppm) { toast(`Peças/malote = 0 em ${p.produto_stock}`, 'error'); continue; }
+        const m = mm.pecas / ppm; // malotes fracionários (ex: 100 peças / 400 = 0.25)
+        const vol1 = (p.comprimento/1000)*(p.largura/1000)*(p.espessura/1000);
+        const entry = {
+          tipo: 'entrada_producao', empresa: 'MCF',
+          produto_stock: p.produto_stock,
+          malotes: +m.toFixed(4),
+          pecas_por_malote: ppm,
+          m3: +(vol1 * mm.pecas).toFixed(4),
+          operador_id: ctx.profile.id,
+          incerteza: false, duvida_resolvida: true,
+          data_registo: state.data_registo,
+          linha: l.nome, turno: deriveTurno(l.nome),
+          justificacao: `Meio malote (${mm.pecas} peças)`,
+        };
+        entry._linha_label = l.nome;
+        entriesToSubmit.push(entry);
       }
     }
 
@@ -1059,5 +1125,100 @@ function pickGamaModal({ linha, produto, tons, gamas, allGamas }) {
     }
     document.body.appendChild(overlay);
     render();
+  });
+}
+
+// =========================================================
+// Modal: meios malotes (peças soltas) — só linhas principal/aproveitamentos/charriot
+// Retorna array de {linha, produto_stock, pecas} (apenas com pecas > 0), ou [] se cancelar.
+// =========================================================
+function askMeiosMalotesModal({ linhas, mp, state, allowMap }) {
+  return new Promise(resolve => {
+    const groupOf = (nome) => {
+      if (nome.startsWith('Linha principal') || /^\[\+\] Madeira de 2ª T\d$/.test(nome)) return 'principal';
+      if (nome.includes('charriot')) return 'charriot';
+      if (nome.startsWith('Linha aproveitamentos') || nome.startsWith('[+] Madeira de 2ª Aprov')) return 'aproveitamentos';
+      return 'other';
+    };
+    const relevant = linhas.filter(l => ['principal','aproveitamentos','charriot'].includes(groupOf(l.nome)));
+    const findMp = (sku) => mp.find(p => p.produto_stock === sku);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:780px;max-height:88vh;overflow-y:auto">
+        <h3>📦 Meios malotes — peças soltas</h3>
+        <p class="sub">Indica o nº de peças por linha. São convertidas automaticamente em malotes fracionários (peças ÷ peças/malote). Linhas em branco são ignoradas.</p>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+            <thead><tr style="background:#f5f5f7">
+              <th style="text-align:left;padding:8px;border-bottom:2px solid #e0e0e0">Linha</th>
+              <th style="text-align:left;padding:8px;border-bottom:2px solid #e0e0e0">Produto</th>
+              <th style="text-align:center;padding:8px;border-bottom:2px solid #e0e0e0;width:110px">Nº peças</th>
+              <th style="text-align:right;padding:8px;border-bottom:2px solid #e0e0e0;width:90px">≈ malotes</th>
+            </tr></thead>
+            <tbody id="mmBody"></tbody>
+          </table>
+        </div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-secondary" id="mmCancel">Saltar (sem meios)</button>
+          <button class="btn btn-primary" id="mmOk">✓ Aplicar</button>
+        </div>
+      </div>
+    `;
+
+    const body = overlay.querySelector('#mmBody');
+    body.innerHTML = relevant.map(l => {
+      const ls = state.linhas[l.nome];
+      const defaultProd = ls?.produto_stock || '';
+      const allow = allowMap[l.nome];
+      const pool = (allow && allow.size > 0)
+        ? mp.filter(p => allow.has(p.produto_stock))
+        : (l.categoria ? mp.filter(p => p.categoria === l.categoria) : mp);
+      const isSub = /^\[\+\] Madeira de 2ª/.test(l.nome);
+      return `
+        <tr data-linha="${l.nome}" ${isSub ? 'style="background:#fef9f0"' : ''}>
+          <td style="padding:6px 8px;font-size:.8rem;${isSub?'padding-left:22px;color:#888':''}">${l.nome}</td>
+          <td style="padding:6px 8px">
+            <select class="mm-prod" style="width:100%;padding:6px;border:1px solid var(--color-border);border-radius:6px;font-size:.82rem">
+              <option value="">— Nenhum —</option>
+              ${pool.map(p => `<option value="${p.produto_stock}" ${p.produto_stock===defaultProd?'selected':''}>${p.produto_stock}</option>`).join('')}
+            </select>
+          </td>
+          <td style="padding:6px 8px;text-align:center">
+            <input type="number" class="mm-pecas" min="0" step="1" placeholder="0" style="width:90px;padding:6px;border:1px solid var(--color-border);border-radius:6px;font-size:.95rem;text-align:center;font-weight:600">
+          </td>
+          <td style="padding:6px 8px;text-align:right;color:#666;font-size:.8rem" class="mm-calc">—</td>
+        </tr>
+      `;
+    }).join('');
+
+    function recalcRow(tr) {
+      const prod = tr.querySelector('.mm-prod').value;
+      const pecas = parseInt(tr.querySelector('.mm-pecas').value) || 0;
+      const cell = tr.querySelector('.mm-calc');
+      if (!prod || !pecas) { cell.textContent = '—'; cell.style.color = '#666'; return; }
+      const p = findMp(prod);
+      const ppm = p?.pecas_por_malote || 0;
+      if (!ppm) { cell.textContent = '⚠ ppm=0'; cell.style.color = '#c0392b'; return; }
+      cell.style.color = '#1f7a3a';
+      cell.textContent = (pecas / ppm).toFixed(3);
+    }
+    body.addEventListener('input', (ev) => { const tr = ev.target.closest('tr'); if (tr) recalcRow(tr); });
+    body.addEventListener('change', (ev) => { const tr = ev.target.closest('tr'); if (tr) recalcRow(tr); });
+
+    overlay.querySelector('#mmCancel').onclick = () => { overlay.remove(); resolve([]); };
+    overlay.querySelector('#mmOk').onclick = () => {
+      const out = [];
+      body.querySelectorAll('tr[data-linha]').forEach(tr => {
+        const linha = tr.dataset.linha;
+        const produto_stock = tr.querySelector('.mm-prod').value;
+        const pecas = parseInt(tr.querySelector('.mm-pecas').value) || 0;
+        if (produto_stock && pecas > 0) out.push({ linha, produto_stock, pecas });
+      });
+      overlay.remove();
+      resolve(out);
+    };
+    document.body.appendChild(overlay);
   });
 }
