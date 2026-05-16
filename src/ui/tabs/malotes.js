@@ -295,7 +295,14 @@ export async function renderMalotes(el, ctx) {
 
   function normalRowHTML(linha) {
     const ls = state.linhas[linha.nome];
-    const produtos = produtosDaLinha(linha);
+    let produtos = produtosDaLinha(linha);
+    // Garante que o produto selecionado aparece na lista (mesmo se não estiver
+    // na allow-list — caso típico de produto pré-preenchido vindo da BD ou
+    // de auto-sync entre linhas com allow-lists diferentes).
+    if (ls.produto_stock && !produtos.some(p => p.produto_stock === ls.produto_stock)) {
+      const found = findMp(ls.produto_stock);
+      produtos = [...produtos, found || { produto_stock: ls.produto_stock, produto_conversao: null }];
+    }
     const suggest = findMp(ls.produto_stock);
     const defPecas = suggest ? suggest.pecas_por_malote : 0;
     const malotes = ls.malotes || 0;
@@ -669,7 +676,19 @@ export async function renderMalotes(el, ctx) {
         persist();
         const tRow = body.querySelector(`tr[data-linha="${CSS.escape(targetName)}"]`);
         if (tRow) {
-          const ts = tRow.querySelector('.field-prod'); if (ts) ts.value = ls.produto_stock;
+          const ts = tRow.querySelector('.field-prod');
+          if (ts) {
+            // Se a option não existe na allow-list da linha-alvo (ex: madeira 2ª
+            // tem menos produtos que principal), cria a option em runtime para
+            // o select poder mostrar o valor selecionado.
+            if (ls.produto_stock && ![...ts.options].some(o => o.value === ls.produto_stock)) {
+              const opt = document.createElement('option');
+              opt.value = ls.produto_stock;
+              opt.textContent = ls.produto_stock;
+              ts.appendChild(opt);
+            }
+            ts.value = ls.produto_stock;
+          }
           const tp2 = tRow.querySelector('.field-pecas'); if (tp2 && p) { tp2.value = p.pecas_por_malote; tp2.placeholder = p.pecas_por_malote; }
           const totEl = tRow.querySelector('.cell-totpecas');
           if (totEl) totEl.textContent = ((tls.malotes||0)*(tls.pecas_por_malote||0)) || '-';
@@ -878,7 +897,7 @@ export async function renderMalotes(el, ctx) {
     }
 
     // Meios malotes (peças soltas que não chegam a um malote completo)
-    if (confirm('Há meios malotes a registar?\n\n(Peças soltas que não chegam a um malote completo)')) {
+    if (await confirmBig('📦 Há meios malotes a registar?', 'Peças soltas que não chegam a um malote completo.', 'Sim, há', 'Não há')) {
       const meios = await askMeiosMalotesModal({ linhas: linhasOrdenadas, mp, state, allowMap });
       for (const mm of (meios || [])) {
         const l = linhaByNome[mm.linha];
@@ -1125,6 +1144,29 @@ function pickGamaModal({ linha, produto, tons, gamas, allGamas }) {
     }
     document.body.appendChild(overlay);
     render();
+  });
+}
+
+// =========================================================
+// Confirmação in-app com botões grandes (tablet-friendly)
+// =========================================================
+function confirmBig(titulo, subtitulo, labelSim = 'Sim', labelNao = 'Não') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:520px;text-align:center;padding:28px 24px">
+        <h3 style="margin:0 0 10px;font-size:1.4rem">${titulo}</h3>
+        ${subtitulo ? `<p style="color:#555;font-size:1rem;margin:0 0 24px;line-height:1.4">${subtitulo}</p>` : ''}
+        <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+          <button type="button" id="cbNao" style="flex:1;min-width:140px;padding:18px 28px;font-size:1.1rem;font-weight:700;border:2px solid #d2d2d7;background:#fff;color:#1d1d1f;border-radius:14px;cursor:pointer;touch-action:manipulation">${labelNao}</button>
+          <button type="button" id="cbSim" style="flex:1;min-width:140px;padding:18px 28px;font-size:1.1rem;font-weight:700;border:none;background:var(--color-blue);color:#fff;border-radius:14px;cursor:pointer;touch-action:manipulation;box-shadow:0 2px 8px rgba(0,122,255,.3)">${labelSim}</button>
+        </div>
+      </div>
+    `;
+    overlay.querySelector('#cbSim').addEventListener('click', () => { overlay.remove(); resolve(true); });
+    overlay.querySelector('#cbNao').addEventListener('click', () => { overlay.remove(); resolve(false); });
+    document.body.appendChild(overlay);
   });
 }
 
