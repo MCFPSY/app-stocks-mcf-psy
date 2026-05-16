@@ -17,6 +17,9 @@ let linhasCache = null;
 let alturasCache = null;
 let compatCache = null;
 let linhaProdutosCache = null;
+// Marca o dia em que já foi feito o "daily reset" — evita que ao mudar
+// a data input para um dia passado, o renderMalotes faça reset outra vez.
+let dailyResetDoneFor = null;
 
 async function loadMP() {
   if (mpCache) return mpCache;
@@ -142,14 +145,17 @@ export async function renderMalotes(el, ctx) {
   const hoje = new Date().toISOString().slice(0, 10);
   let state = loadState(userId);
 
-  // Reset diário
-  if (!state || state.data_registo !== hoje) {
+  // Reset diário — apenas na primeira renderização do dia. Sem este flag,
+  // se o operador mudar o date-input para um dia passado, o re-render
+  // resetaria de volta a hoje (bug).
+  if (!state || (state.data_registo !== hoje && dailyResetDoneFor !== hoje)) {
     state = { data_registo: hoje, linhas: {} };
     for (const l of linhasOrdenadas) {
       state.linhas[l.nome] = l.sinal === '-' ? { entries: [emptyEntry()] } : { produto_stock: '', pecas_por_malote: 0, malotes: 0 };
     }
     saveState(userId, state);
   }
+  dailyResetDoneFor = hoje;
 
   // Pré-fill a partir de movimentos do dia (turnos anteriores ou outro operador):
   // para cada linha vazia das famílias principal/aproveitamentos/charriot, busca
