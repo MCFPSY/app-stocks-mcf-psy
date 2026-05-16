@@ -153,38 +153,44 @@ export async function renderMalotes(el, ctx) {
 
   // Pré-fill a partir de movimentos do dia (turnos anteriores ou outro operador):
   // para cada linha vazia das famílias principal/aproveitamentos/charriot, busca
-  // o último produto registado hoje nessa linha. Linhas PSY/Sobras NÃO são pré-preenchidas.
-  if (navigator.onLine) {
+  // o último produto registado nessa data. Linhas PSY/Sobras NÃO são pré-preenchidas.
+  // overwriteEmptyOnly=true → não sobrescreve produtos já escolhidos.
+  async function prefillFromDay(date, overwriteEmptyOnly = true) {
+    if (!navigator.onLine) return 0;
     try {
-      const { data: todayMovs } = await supabase.from('movimentos')
+      const { data: dayMovs, error } = await supabase.from('movimentos')
         .select('linha, produto_stock, pecas_por_malote, criado_em')
         .eq('tipo', 'entrada_producao').eq('empresa', 'MCF')
-        .eq('estornado', false).eq('data_registo', state.data_registo)
+        .eq('estornado', false).eq('data_registo', date)
         .not('linha', 'is', null)
         .order('criado_em', { ascending: false });
-      if (todayMovs?.length) {
-        const lastByLinha = {};
-        for (const m of todayMovs) {
-          if (!lastByLinha[m.linha]) lastByLinha[m.linha] = m;
-        }
-        let prefilled = false;
-        for (const l of linhasOrdenadas) {
-          if (l.sinal === '-') continue; // PSY/Sobras: não pré-preencher
-          const ls = state.linhas[l.nome];
-          if (ls.produto_stock) continue; // já tem escolha do operador
-          const last = lastByLinha[l.nome];
-          if (last) {
-            ls.produto_stock = last.produto_stock;
-            ls.pecas_por_malote = last.pecas_por_malote || 0;
-            prefilled = true;
-          }
-        }
-        if (prefilled) saveState(userId, state);
+      if (error) { console.warn('[prefill] erro supabase:', error); return 0; }
+      console.log(`[prefill] ${dayMovs?.length || 0} movimentos para ${date}`);
+      if (!dayMovs?.length) return 0;
+      const lastByLinha = {};
+      for (const m of dayMovs) {
+        if (!lastByLinha[m.linha]) lastByLinha[m.linha] = m;
       }
+      let count = 0;
+      for (const l of linhasOrdenadas) {
+        if (l.sinal === '-') continue; // PSY/Sobras: não pré-preencher
+        const ls = state.linhas[l.nome];
+        if (overwriteEmptyOnly && ls.produto_stock) continue;
+        const last = lastByLinha[l.nome];
+        if (last) {
+          ls.produto_stock = last.produto_stock;
+          ls.pecas_por_malote = last.pecas_por_malote || 0;
+          count++;
+        }
+      }
+      if (count) saveState(userId, state);
+      return count;
     } catch (err) {
-      console.warn('Pré-fill dos movimentos do dia falhou:', err);
+      console.warn('[prefill] exceção:', err);
+      return 0;
     }
   }
+  await prefillFromDay(state.data_registo, true);
 
   // Helper: deriva turno do nome da linha (T1/T2/T3 inerente) ou null
   function deriveTurno(nome) {
@@ -813,7 +819,23 @@ export async function renderMalotes(el, ctx) {
     });
   }
 
-  el.querySelector('#dataReg').addEventListener('change', (e) => { state.data_registo = e.target.value || hoje; persist(); });
+  el.querySelector('#dataReg').addEventListener('change', async (e) => {
+    const newDate = e.target.value || hoje;
+    state.data_registo = newDate;
+    // Limpar produtos das linhas não-PSY antes do prefill, para que o pré-fill
+    // da nova data seja aplicado mesmo onde já havia setup (a data mudou →
+    // contexto diferente). Malotes/pecas_por_malote ficam.
+    for (const l of linhasOrdenadas) {
+      if (l.sinal === '-') continue;
+      const ls = state.linhas[l.nome];
+      ls.produto_stock = '';
+    }
+    persist();
+    const n = await prefillFromDay(newDate, false);
+    if (n > 0) toast(`✓ Pré-preenchidas ${n} linha(s) de ${newDate}`, 'success');
+    else toast(`Sem registos para ${newDate}`, '');
+    renderMalotes(el, ctx);
+  });
 
   el.querySelector('#resetBtn').addEventListener('click', () => {
     if (!confirm('Apagar setup e quantidades atuais?')) return;
