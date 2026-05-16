@@ -825,12 +825,12 @@ export async function renderMalotes(el, ctx) {
     });
   }
 
-  el.querySelector('#dataReg').addEventListener('change', async (e) => {
-    const newDate = e.target.value || hoje;
+  // Debounce: o input type="date" dispara change a cada keystroke válida
+  // (escrever "1" no dia já dispara). Esperamos 800ms depois da última
+  // alteração para evitar disparos prematuros.
+  let dateChangeTimer = null;
+  async function applyDateChange(newDate) {
     state.data_registo = newDate;
-    // Limpar produtos das linhas não-PSY antes do prefill, para que o pré-fill
-    // da nova data seja aplicado mesmo onde já havia setup (a data mudou →
-    // contexto diferente). Malotes/pecas_por_malote ficam.
     for (const l of linhasOrdenadas) {
       if (l.sinal === '-') continue;
       const ls = state.linhas[l.nome];
@@ -841,6 +841,24 @@ export async function renderMalotes(el, ctx) {
     if (n > 0) toast(`✓ Pré-preenchidas ${n} linha(s) de ${newDate}`, 'success');
     else toast(`Sem registos para ${newDate}`, '');
     renderMalotes(el, ctx);
+  }
+  el.querySelector('#dataReg').addEventListener('input', (e) => {
+    const newDate = e.target.value;
+    if (!newDate) return;
+    // Ano mínimo razoável — evita disparar com datas parciais tipo "0001-05-26"
+    const year = parseInt(newDate.slice(0, 4));
+    if (year < 2020 || year > 2099) return;
+    if (dateChangeTimer) clearTimeout(dateChangeTimer);
+    dateChangeTimer = setTimeout(() => applyDateChange(newDate), 800);
+  });
+  // Blur (ex: tab-out ou clicar fora) → aplica imediatamente
+  el.querySelector('#dataReg').addEventListener('blur', (e) => {
+    if (dateChangeTimer) { clearTimeout(dateChangeTimer); dateChangeTimer = null; }
+    const newDate = e.target.value;
+    if (!newDate || newDate === state.data_registo) return;
+    const year = parseInt(newDate.slice(0, 4));
+    if (year < 2020 || year > 2099) return;
+    applyDateChange(newDate);
   });
 
   el.querySelector('#resetBtn').addEventListener('click', () => {
